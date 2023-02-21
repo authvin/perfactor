@@ -1,0 +1,57 @@
+File: _streakfinder.test
+Type: cpu
+Time: Nov 30, 2022 at 3:51pm (CET)
+Duration: 13.17s, Total samples = 29.23s (221.94%)
+Showing nodes accounting for 26.07s, 89.19% of 29.23s total
+Dropped 185 nodes (cum <= 0.15s)
+      flat  flat%   sum%        cum   cum%
+     7.70s 26.34% 26.34%      8.86s 30.31%  sort.doPivot /usr/lib/go-1.13/src/sort/sort.go:123
+     5.72s 19.57% 45.91%      7.20s 24.63%  sort.doPivot /usr/lib/go-1.13/src/sort/sort.go:121
+        3s 10.26% 56.18%         3s 10.26%  sort.IntSlice.Less /usr/lib/go-1.13/src/sort/sort.go:272
+     1.32s  4.52% 60.69%      1.32s  4.52%  sort.IntSlice.Swap /usr/lib/go-1.13/src/sort/sort.go:273
+     1.09s  3.73% 64.42%      2.12s  7.25%  sort.doPivot /usr/lib/go-1.13/src/sort/sort.go:129
+     1.03s  3.52% 67.94%      1.21s  4.14%  sort.insertionSort /usr/lib/go-1.13/src/sort/sort.go:27
+     0.89s  3.04% 70.99%      0.89s  3.04%  sort.doPivot /usr/lib/go-1.13/src/sort/sort.go:130
+     0.83s  2.84% 73.83%      0.83s  2.84%  sync.(*Mutex).Lock /usr/lib/go-1.13/src/sync/mutex.go:74
+     0.75s  2.57% 76.39%      0.75s  2.57%  sync.(*Mutex).Unlock /usr/lib/go-1.13/src/sync/mutex.go:186
+     0.41s  1.40% 77.80%      1.91s  6.53%  _streakfinder.findLargestStreak /mnt/c/Users/Audun/GolandProjects/perfactor/_streakfinder_v2/main.go:90
+     0.29s  0.99% 78.79%      0.29s  0.99%  sort.doPivot /usr/lib/go-1.13/src/sort/sort.go:165
+     0.29s  0.99% 79.78%      0.29s  0.99%  sort.insertionSort /usr/lib/go-1.13/src/sort/sort.go:26
+     0.25s  0.86% 80.64%      0.25s  0.86%  sort.doPivot /usr/lib/go-1.13/src/sort/sort.go:139
+     0.22s  0.75% 81.39%      0.22s  0.75%  _streakfinder.findLargestStreak /mnt/c/Users/Audun/GolandProjects/perfactor/_streakfinder_v2/main.go:92
+     0.21s  0.72% 82.11%      0.21s  0.72%  math/rand.(*Rand).Int31n /usr/lib/go-1.13/src/math/rand/rand.go:133
+     0.20s  0.68% 82.79%      0.20s  0.68%  math/rand.(*Rand).Int31n /usr/lib/go-1.13/src/math/rand/rand.go:138
+     0.19s  0.65% 83.44%      0.26s  0.89%  sort.doPivot /usr/lib/go-1.13/src/sort/sort.go:117
+     0.18s  0.62% 84.06%      0.37s  1.27%  sort.insertionSort /usr/lib/go-1.13/src/sort/sort.go:28
+     0.17s  0.58% 84.64%      0.17s  0.58%  _streakfinder.findLargestStreak /mnt/c/Users/Audun/GolandProjects/perfactor/_streakfinder_v2/main.go:89
+     0.16s  0.55% 85.19%      0.16s  0.55%  _streakfinder.generateArray /mnt/c/Users/Audun/GolandProjects/perfactor/_streakfinder_v2/main.go:74
+     0.15s  0.51% 85.70%      0.15s  0.51%  runtime.acquirem /usr/lib/go-1.13/src/runtime/runtime1.go:445
+     0.14s  0.48% 86.18%      3.02s 10.33%  _streakfinder.generateArray /mnt/c/Users/Audun/GolandProjects/perfactor/_streakfinder_v2/main.go:75
+     0.14s  0.48% 86.66%      0.17s  0.58%  sort.medianOfThree /usr/lib/go-1.13/src/sort/sort.go:80
+     0.13s  0.44% 87.10%      2.76s  9.44%  math/rand.(*Rand).Intn /usr/lib/go-1.13/src/math/rand/rand.go:172
+     0.12s  0.41% 87.51%      0.18s  0.62%  sort.quickSort /usr/lib/go-1.13/src/sort/sort.go:205
+     0.11s  0.38% 87.89%      2.06s  7.05%  math/rand.(*Rand).Int63 /usr/lib/go-1.13/src/math/rand/rand.go:85
+     0.07s  0.24% 88.13%         1s  3.42%  runtime.growslice /usr/lib/go-1.13/src/runtime/slice.go:175
+     0.07s  0.24% 88.37%     20.88s 71.43%  sort.quickSort /usr/lib/go-1.13/src/sort/sort.go:190
+     0.07s  0.24% 88.61%      1.94s  6.64%  sort.quickSort /usr/lib/go-1.13/src/sort/sort.go:209
+     0.05s  0.17% 88.78%      0.27s  0.92%  math/rand.(*lockedSource).Int63 /usr/lib/go-1.13/src/math/rand/rand.go:381
+     0.05s  0.17% 88.95%      0.18s  0.62%  math/rand.(*rngSource).Int63 /usr/lib/go-1.13/src/math/rand/rng.go:234
+     0.02s 0.068% 89.02%      0.35s  1.20%  _streakfinder.findLargestStreak /mnt/c/Users/Audun/GolandProjects/perfactor/_streakfinder_v2/main.go:95
+     0.02s 0.068% 89.09%      2.07s  7.08%  math/rand.(*Rand).Int31n /usr/lib/go-1.13/src/math/rand/rand.go:134
+     0.01s 0.034% 89.12%      2.88s  9.85%  math/rand.Intn /usr/lib/go-1.13/src/math/rand/rand.go:329
+     0.01s 0.034% 89.15%      0.18s  0.62%  runtime.mallocgc /usr/lib/go-1.13/src/runtime/malloc.go:931
+     0.01s 0.034% 89.19%      0.33s  1.13%  sort.doPivot /usr/lib/go-1.13/src/sort/sort.go:105
+         0     0% 89.19%      5.92s 20.25%  _streakfinder.BenchmarkRunProgram /mnt/c/Users/Audun/GolandProjects/perfactor/_streakfinder_v2/main_test.go:12
+         0     0% 89.19%      3.18s 10.88%  _streakfinder.runProgram /mnt/c/Users/Audun/GolandProjects/perfactor/_streakfinder_v2/main.go:54
+         0     0% 89.19%      2.74s  9.37%  _streakfinder.runProgram /mnt/c/Users/Audun/GolandProjects/perfactor/_streakfinder_v2/main.go:66
+         0     0% 89.19%     23.25s 79.54%  _streakfinder.runProgram.func1 /mnt/c/Users/Audun/GolandProjects/perfactor/_streakfinder_v2/main.go:61
+         0     0% 89.19%     23.25s 79.54%  _streakfinder.sortArray /mnt/c/Users/Audun/GolandProjects/perfactor/_streakfinder_v2/main.go:81
+         0     0% 89.19%      2.06s  7.05%  math/rand.(*Rand).Int31 /usr/lib/go-1.13/src/math/rand/rand.go:99
+         0     0% 89.19%      0.83s  2.84%  math/rand.(*lockedSource).Int63 /usr/lib/go-1.13/src/math/rand/rand.go:380
+         0     0% 89.19%      0.75s  2.57%  math/rand.(*lockedSource).Int63 /usr/lib/go-1.13/src/math/rand/rand.go:382
+         0     0% 89.19%     23.25s 79.54%  sort.Ints /usr/lib/go-1.13/src/sort/sort.go:307
+         0     0% 89.19%     23.25s 79.54%  sort.Sort /usr/lib/go-1.13/src/sort/sort.go:218
+         0     0% 89.19%     18.77s 64.21%  sort.quickSort /usr/lib/go-1.13/src/sort/sort.go:194
+         0     0% 89.19%     17.71s 60.59%  sort.quickSort /usr/lib/go-1.13/src/sort/sort.go:197
+         0     0% 89.19%      5.92s 20.25%  testing.(*B).run1.func1 /usr/lib/go-1.13/src/testing/benchmark.go:230
+         0     0% 89.19%      5.92s 20.25%  testing.(*B).runN /usr/lib/go-1.13/src/testing/benchmark.go:190
