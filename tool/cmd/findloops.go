@@ -101,14 +101,31 @@ func findloops(cmd *cobra.Command, args []string) {
 	}
 }
 
-func filterLoopsUsingProfileData(loops []token.Pos, sorted loopTimeArray, fset *token.FileSet) []token.Pos {
+func filterLoopsUsingProfileData(safeLoops []token.Pos, sorted loopTimeArray, fset *token.FileSet) []token.Pos {
 	output := make([]token.Pos, 0)
 	for _, lt := range sorted {
 		loop, time := lt.loop, lt.time
+		// check if the loop is in the list of safe loops
+		if !contains(safeLoops, loop.Pos()) {
+			continue
+		}
+		if time == 0 {
+			// if the time is 0, then the loop is not worth making concurrent
+			continue
+		}
 		println("Loop at line ", fset.Position(loop.Pos()).Line, " has a total time of ", time)
 		output = append(output, loop.Pos())
 	}
 	return output
+}
+
+func contains(loops []token.Pos, pos token.Pos) bool {
+	for _, loop := range loops {
+		if loop == pos {
+			return true
+		}
+	}
+	return false
 }
 
 // type to contain both a reference to a loop and the cumulative time of the loop
