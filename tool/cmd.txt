@@ -1,0 +1,1 @@
+go run perfactor findloops -s ../_streakfinder/main.go -p ../1-cpu.pprof

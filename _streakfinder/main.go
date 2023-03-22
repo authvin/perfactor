@@ -57,7 +57,7 @@ func runProgram(length int, max int, seed int64, seedsToCheck int64) [][]int {
 }
 
 func generateArray(length int, max int, seed int64) []int {
-	rand.Seed(seed)
+	rand.NewSource(seed)
 	slice := make([]int, length)
 	for i := 1; i < length; i++ {
 		slice[i] = rand.Intn(max)
