@@ -21,23 +21,23 @@ var traverseCmd = &cobra.Command{
 }
 
 // Stack from https://stackoverflow.com/a/28542256
-type stack struct {
+type Stack struct {
 	lock sync.Mutex
 	s    []*gr.Node
 }
 
-func NewStack() *stack {
-	return &stack{sync.Mutex{}, make([]*gr.Node, 0)}
+func NewStack() *Stack {
+	return &Stack{sync.Mutex{}, make([]*gr.Node, 0)}
 }
 
-func (s *stack) Push(v *gr.Node) {
+func (s *Stack) Push(v *gr.Node) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
 	s.s = append(s.s, v)
 }
 
-func (s *stack) Pop() *gr.Node {
+func (s *Stack) Pop() *gr.Node {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
@@ -51,7 +51,7 @@ func (s *stack) Pop() *gr.Node {
 	return res
 }
 
-func (s *stack) Peek() *gr.Node {
+func (s *Stack) Peek() *gr.Node {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
@@ -63,7 +63,7 @@ func (s *stack) Peek() *gr.Node {
 	return s.s[l-1]
 }
 
-func (s *stack) HasNode() bool {
+func (s *Stack) HasNode() bool {
 	return len(s.s) != 0
 }
 
@@ -153,7 +153,7 @@ loop:
 	}
 }
 
-func fetchChild(currentNode *gr.Node, parents *stack) *gr.Node {
+func fetchChild(currentNode *gr.Node, parents *Stack) *gr.Node {
 	edges, items := getChildrenValues(currentNode)
 
 	// Create a prompt for the current node's children

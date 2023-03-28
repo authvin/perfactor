@@ -9,7 +9,7 @@ import (
 // Simple helper program for the logic of extracting the duration from profiling data
 // This only gets the duration, not the more complex data for profiling, for finding where to apply refactoring
 func main() {
-	filename := "../1-prof.txt"
+	filename := "data/sub2/1-prof.txt"
 	output, err := os.ReadFile(filename)
 	if output == nil {
 		fmt.Println("Could not read file " + filename)

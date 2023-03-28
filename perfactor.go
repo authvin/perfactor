@@ -29,7 +29,7 @@ func main() {
 	//findPossibleRefactorings("_streakfinder/main.go", nil)
 }
 
-const dataPath = "../_data/"
+const dataPath = "_data/"
 
 // RunCode Run external code in _tmp as a separate program - go test
 func RunCode(flags string, benchname string, id string) {
@@ -38,7 +38,7 @@ func RunCode(flags string, benchname string, id string) {
 	// go test %flags% -bench=%benchname% -run=NONE -benchmem -memprofile mem.pprof -cpuprofile cpu.pprof > %id%.bench
 	// Potentially replace with: https://cs.opensource.google/go/go/+/refs/tags/go1.19.2:src/testing/benchmark.go;l=511
 	output, err := exec.Command("powershell", "-nologo", "-noprofile", // opens powershell
-		"cd", "../_tmp;", // move into the tmp folder
+		"cd", "_tmp;", // move into the tmp folder
 		"go", "test", flags, // we use go test, plus any flags that need to be passed to the executing method
 		"-bench="+benchname, // the name of the benchmark method in the test file to run
 		"-run=NONE",         // We don't run any normal tests. Maybe have this be a default value?

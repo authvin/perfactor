@@ -7,6 +7,12 @@ import (
 	"sort"
 )
 
+// Most or all of the code in this file is copied from the pprof tool.
+// The original code is available at https://github.com/google/pprof
+// The reason it is copied and modified here is because the graph package is not exported by the pprof tool.
+// There might be cleaner solutions, but this works. It should also be easily substituted if a better
+// method is found, since the code is mostly copied directly.
+
 func GetGraphFromProfile(prof *profile.Profile) *Graph {
 	// Create nodes
 	locations := make(map[uint64][]*Node, len(prof.Location))
