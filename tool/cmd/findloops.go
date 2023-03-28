@@ -5,9 +5,11 @@ import (
 	"github.com/google/pprof/profile"
 	"github.com/spf13/cobra"
 	"go/ast"
+	"go/importer"
 	"go/parser"
 	"go/printer"
 	"go/token"
+	"go/types"
 	"golang.org/x/tools/go/ast/astutil"
 	"os"
 	gr "perfactor/graph"
@@ -90,11 +92,34 @@ func findloops(cmd *cobra.Command, args []string) {
 		safeLoops = filterLoopsUsingProfileData(safeLoops, dataFromProfileSorting, fset)
 	}
 
+	// get type information from the type checker
+	conf := types.Config{Importer: importer.Default()}
+	info := &types.Info{
+		Defs:  make(map[*ast.Ident]types.Object),
+		Uses:  make(map[*ast.Ident]types.Object),
+		Types: make(map[ast.Expr]types.TypeAndValue),
+	}
+
+	_, err = conf.Check(astFile.Name.Name, fset, []*ast.File{astFile}, info)
+	if err != nil {
+		println(err)
+		return
+	}
+
+	checker := types.Checker{
+		Info: info,
+	}
+
 	for _, loop := range safeLoops {
-		makeLoopConcurrent(astFile, fset, loop)
+		makeLoopConcurrent(astFile, fset, loop, checker)
 	}
 	// write the modified astFile to a new file
-	err = printer.Fprint(os.Stdout, fset, astFile)
+	file, err := os.Create("../temp.go")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	err = printer.Fprint(file, fset, astFile)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -163,8 +188,8 @@ func sortLoopsUsingProfileData(graph *gr.Graph, forLoops []*ast.ForStmt, rangeLo
 		nodes := graph.FindNodesByLine(startLine, endLine)
 		for _, node := range nodes {
 			// we have the node - now we need to get the performance data for it
-			println("Node in loop at line ", startLine, " has a total time of ", node.Cum, " and a self time of ", node.Flat)
-			println("The node has the name ", node.Info.Name)
+			//println("Node in loop at line ", startLine, " has a total time of ", node.Cum, " and a self time of ", node.Flat)
+			//println("The node has the name ", node.Info.Name)
 			// add the cumulative time to the total cumulative time for this loop
 			totalCumulativeTime[i].time += node.Cum
 		}
@@ -210,6 +235,7 @@ func findSafeLoopsForRefactoring(forLoops []*ast.ForStmt, rangeLoops []*ast.Rang
 					if ident, ok := lhs.(*ast.Ident); ok {
 						// check if the identifier's declaration is within the loop
 						if ident.Obj.Pos() < loop.Pos() || ident.Obj.Pos() > loop.End() {
+							// document a test case where the analysis is wrong but still safe
 							//println("found identifier: ", ident.Name, " at line ", f.Position(ident.Pos()).Line)
 							loopVarUsage[ident] = true
 						}
@@ -235,8 +261,10 @@ func findSafeLoopsForRefactoring(forLoops []*ast.ForStmt, rangeLoops []*ast.Rang
 			if ident, ok := n.(*ast.Ident); ok {
 				if _, exists := loopVarUsage[ident]; exists {
 					if loopVarUsage[ident] {
-						println("Cannot make loop at line", f.Position(loop.Pos()).Line, "concurrent because it writes to", ident.Name, "used outside the loop")
+						// This is a good candidate for a unit test
+						println("Cannot make loop at line", f.Position(loop.Pos()).Line, "concurrent because it writes to '"+ident.Name+"' declared outside the loop")
 						canMakeConcurrent = false
+						// no need to look into subtrees of this node
 						return false
 					}
 				}
@@ -252,16 +280,19 @@ func findSafeLoopsForRefactoring(forLoops []*ast.ForStmt, rangeLoops []*ast.Rang
 }
 
 // Function to insert goroutines into for loops that are already known to be safe to refactor
-func makeLoopConcurrent(astFile *ast.File, fset *token.FileSet, loopPos token.Pos) {
+func makeLoopConcurrent(astFile *ast.File, fset *token.FileSet, loopPos token.Pos, checker types.Checker) {
 	astutil.Apply(astFile, func(cursor *astutil.Cursor) bool {
 		node := cursor.Node()
 
 		if forLoop, ok := node.(*ast.ForStmt); ok && fset.Position(forLoop.Pos()).Offset == fset.Position(loopPos).Offset {
+			// add import for sync and waitgroup
+			astutil.AddImport(fset, astFile, "sync")
 			wgIdent := ast.NewIdent("wg")
 			wgType := &ast.SelectorExpr{
 				X:   ast.NewIdent("sync"),
 				Sel: ast.NewIdent("WaitGroup"),
 			}
+
 			wgDecl := &ast.DeclStmt{
 				Decl: &ast.GenDecl{
 					Tok: token.VAR,
@@ -288,26 +319,37 @@ func makeLoopConcurrent(astFile *ast.File, fset *token.FileSet, loopPos token.Po
 			}
 			// append all the statements in the for loop to the body of the goroutine
 			block.List = append(block.List, forLoop.Body.List...)
+
+			// get the type of the variable being assigned to in the init statement
+			//forLoop.Init.(*ast.AssignStmt)
+			l := len(forLoop.Init.(*ast.AssignStmt).Rhs) - 1
+
+			var typeList []*ast.Field
+
+			// for each ident in the lhs of the for loop init
+			// create a field with the type from the rhs
+
+			for i := 0; i < len(forLoop.Init.(*ast.AssignStmt).Lhs); i++ {
+				ident := forLoop.Init.(*ast.AssignStmt).Lhs[i].(*ast.Ident)
+				typeList = append(typeList, &ast.Field{
+					Type:  ast.NewIdent(checker.TypeOf(forLoop.Init.(*ast.AssignStmt).Rhs[l]).String()),
+					Names: []*ast.Ident{ast.NewIdent(ident.Name)},
+				})
+			}
+
 			goStmt := &ast.GoStmt{
+				// create a goroutine
 				Call: &ast.CallExpr{
-					Fun: ast.NewIdent("func"),
-					Args: []ast.Expr{
-						&ast.FuncLit{
-							Type: &ast.FuncType{
-								Params: &ast.FieldList{
-									// integer parameter
-									List: []*ast.Field{
-										&ast.Field{
-											Type: ast.NewIdent("i"),
-										},
-									},
-								},
+					Fun: &ast.FuncLit{
+						Type: &ast.FuncType{
+							Params: &ast.FieldList{
+								// insert the list of types created above
+								List: typeList,
 							},
-							Body: block,
 						},
-						// pass the loop variable as an argument to the goroutine
-						forLoop.Init.(*ast.AssignStmt).Lhs[0],
+						Body: block,
 					},
+					Args: forLoop.Init.(*ast.AssignStmt).Lhs,
 				},
 			}
 
