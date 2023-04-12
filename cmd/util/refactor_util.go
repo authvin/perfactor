@@ -45,7 +45,7 @@ func MakeLoopConcurrent(astFile *ast.File, fset *token.FileSet, loopPos token.Po
 					},
 				},
 			}
-			// append all the statements in the for loop to the body of the goroutine
+			// append all the statements in the for Loop to the body of the goroutine
 			block.List = append(block.List, forLoop.Body.List...)
 
 			// get the type of the variable being assigned to in the init statement
@@ -54,13 +54,14 @@ func MakeLoopConcurrent(astFile *ast.File, fset *token.FileSet, loopPos token.Po
 
 			var typeList []*ast.Field
 
-			// for each ident in the lhs of the for loop init
+			// for each ident in the lhs of the for Loop init
 			// create a field with the type from the rhs
 
 			for i := 0; i < len(forLoop.Init.(*ast.AssignStmt).Lhs); i++ {
+				typ := checker.TypeOf(forLoop.Init.(*ast.AssignStmt).Rhs[l])
 				ident := forLoop.Init.(*ast.AssignStmt).Lhs[i].(*ast.Ident)
 				typeList = append(typeList, &ast.Field{
-					Type:  ast.NewIdent(checker.TypeOf(forLoop.Init.(*ast.AssignStmt).Rhs[l]).String()),
+					Type:  ast.NewIdent(typ.String()),
 					Names: []*ast.Ident{ast.NewIdent(ident.Name)},
 				})
 			}
@@ -94,7 +95,7 @@ func MakeLoopConcurrent(astFile *ast.File, fset *token.FileSet, loopPos token.Po
 				},
 			}
 
-			// Place the go stmt in the for loop
+			// Place the go stmt in the for Loop
 			forLoop.Body.List = []ast.Stmt{wgAddCall, goStmt}
 
 			wgWaitCall := &ast.ExprStmt{
@@ -114,34 +115,34 @@ func MakeLoopConcurrent(astFile *ast.File, fset *token.FileSet, loopPos token.Po
 }
 
 // FindSafeLoopsForRefactoring finds loops that can be refactored to be concurrent
-// It returns a list of loop positions pointing to for and range loops
+// It returns a list of Loop positions pointing to for and range loops
 func FindSafeLoopsForRefactoring(forLoops []*ast.ForStmt, f *token.FileSet) []token.Pos {
-	// A map to store loop variable usage information
+	// A map to store Loop variable usage information
 	loopVarUsage := make(map[*ast.Ident]bool)
 
-	// The first predicate is that the loop does not assign any values used within the loop
-	// The loop should be able to write to a variable it doesn't use - right? If the writing doesn't mind the context... though maybe it wants the last index it goes through?
+	// The first predicate is that the Loop does not assign any values used within the Loop
+	// The Loop should be able to write to a variable it doesn't use - right? If the writing doesn't mind the context... though maybe it wants the last index it goes through?
 	// - but that's pretty poor design. Should be enough to acknowledge that this is a weakness, and that a better tool would take this into account
 	// Can we check if any of our variables are assigned to in a goroutine? because we'd want to avoid any of those. But then, is it different?
-	// So long as it's not a side effect of the loop itself, the program might change, but it can still be done safely. This might
+	// So long as it's not a side effect of the Loop itself, the program might change, but it can still be done safely. This might
 	// be one of those "we can do this, but it changes behaviour" refactorings.
 
-	// Problem: what about assigning to an array or map, where we're assigning to an index corresponding to the main loop variable?
-	// Solution: Check if the assign is to an index of an array or map, and if so, check if the index is the loop variable
+	// Problem: what about assigning to an array or map, where we're assigning to an index corresponding to the main Loop variable?
+	// Solution: Check if the assign is to an index of an array or map, and if so, check if the index is the Loop variable
 
-	// Collect all for loop variables
+	// Collect all for Loop variables
 	for _, loop := range forLoops {
 		FindAssignmentsInLoop(loop, loopVarUsage)
 	}
 
-	// Collect all range loop variables
+	// Collect all range Loop variables
 
 	// list of loops that can be made concurrent
 	var concurrentLoops []token.Pos
 
 	// Now that we have the information, we can filter out the loops that can be made concurrent
 	for _, loop := range forLoops {
-		// The check we're doing is if the loop does not write to a variable outside the loop
+		// The check we're doing is if the Loop does not write to a variable outside the Loop
 		// Thus, if that doesn't trigger, we assume it's safe to refactor
 		// add to list of loops that can be made concurrent
 		if LoopCanBeConcurrent(loop, loopVarUsage, f) {
@@ -158,7 +159,7 @@ func LoopCanBeConcurrent(loop *ast.ForStmt, loopVarUsage map[*ast.Ident]bool, f 
 			if _, exists := loopVarUsage[ident]; exists {
 				if loopVarUsage[ident] {
 					// This is a good candidate for a unit test
-					println("Cannot make loop at line", f.Position(loop.Pos()).Line, "concurrent because it writes to '"+ident.Name+"' declared outside the loop")
+					println("Cannot make Loop at line", f.Position(loop.Pos()).Line, "concurrent because it writes to '"+ident.Name+"' declared outside the Loop")
 					canMakeConcurrent = false
 					// no need to look into subtrees of this node
 					return false

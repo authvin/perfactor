@@ -15,7 +15,7 @@ func main() {
 		fmt.Println("Could not read file " + filename)
 	}
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("Error reading file: " + err.Error())
 	}
 	r, _ := regexp.Compile("Duration: [^,]+,")
 	duration := r.FindAll(output, -1)

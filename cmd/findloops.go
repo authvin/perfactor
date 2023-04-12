@@ -3,13 +3,9 @@ package cmd
 import (
 	"fmt"
 	"github.com/spf13/cobra"
-	"go/ast"
-	"go/importer"
 	"go/parser"
-	"go/printer"
 	"go/token"
 	"go/types"
-	"os"
 	"perfactor/cmd/util"
 )
 
@@ -39,23 +35,12 @@ func findloops(cmd *cobra.Command, args []string) {
 	println(Source)
 	astFile, err := parser.ParseFile(fset, Source, nil, parser.ParseComments)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("Error parsing AST from file: " + err.Error())
 		return
 	}
-	// array of AST positions for for loops
-	var forLoops []*ast.ForStmt
-
-	// Traverse the AST looking for loops
-	ast.Inspect(astFile, func(n ast.Node) bool {
-		switch n := n.(type) {
-		case *ast.ForStmt:
-			//fmt.Println("Found a for loop at line", fset.Position(n.Pos()).Line)
-			forLoops = append(forLoops, n)
-		}
-		return true
-	})
-
-	dataFromProfileSorting := util.GetDataFromProfile(forLoops, fset)
+	forLoops := util.FindForLoopsInAST(astFile)
+	prof := util.GetProfileDataFromFile(ProfileSource)
+	dataFromProfileSorting := util.SortLoopsUsingProfileData(prof, forLoops, fset)
 
 	// Look through the for loops and range loops and find the ones that are possible to make concurrent
 	// This will be done by looking at the variables that are assigned in the loop and seeing if they are declared outside of the loop
@@ -65,10 +50,14 @@ func findloops(cmd *cobra.Command, args []string) {
 
 	// filter safeLoops using the data from the profiling
 	if dataFromProfileSorting != nil {
-		safeLoops = util.FilterLoopsUsingProfileData(safeLoops, dataFromProfileSorting, fset)
+		loops := util.FilterLoopsUsingProfileData(safeLoops, dataFromProfileSorting, fset)
+		safeLoops = make([]token.Pos, len(loops))
+		for i, loop := range loops {
+			safeLoops[i] = loop.Loop.Pos()
+		}
 	}
 
-	info := getTypeCheckerInfo(astFile, fset)
+	info := util.GetTypeCheckerInfo(astFile, fset)
 
 	checker := types.Checker{
 		Info: info,
@@ -77,39 +66,5 @@ func findloops(cmd *cobra.Command, args []string) {
 	for _, loop := range safeLoops {
 		util.MakeLoopConcurrent(astFile, fset, loop, checker)
 	}
-	writeModifiedAST(fset, astFile)
+	util.WriteModifiedAST(fset, astFile, "_tmp/temp.go")
 }
-
-func writeModifiedAST(fset *token.FileSet, astFile *ast.File) {
-	// write the modified astFile to a new file
-	file, err := os.Create("_tmp/temp.go")
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	err = printer.Fprint(file, fset, astFile)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-}
-
-func getTypeCheckerInfo(astFile *ast.File, fset *token.FileSet) *types.Info {
-	// get type information from the type checker
-	conf := types.Config{Importer: importer.Default()}
-	info := &types.Info{
-		Defs:  make(map[*ast.Ident]types.Object),
-		Uses:  make(map[*ast.Ident]types.Object),
-		Types: make(map[ast.Expr]types.TypeAndValue),
-	}
-	// fill in the info object using the type checker
-	_, err := conf.Check(astFile.Name.Name, fset, []*ast.File{astFile}, info)
-	if err != nil {
-		println(err)
-		os.Exit(0)
-	}
-	return info
-}
-
-// type to contain both a reference to a loop and the cumulative time of the loop
-// Use this in order to be able to sort the array

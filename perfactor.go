@@ -42,14 +42,14 @@ func RunCode(flags string, benchname string, id string) {
 		"go", "test", flags, // we use go test, plus any flags that need to be passed to the executing method
 		"-bench="+benchname, // the name of the benchmark method in the test file to run
 		"-run=NONE",         // We don't run any normal tests. Maybe have this be a default value?
-		"-memprofile "+dataPath+id+"-mem.pprof",    // record memory profile
-		"-cpuprofile "+dataPath+id+"-cpu.pprof",    // record cpu profile
-		"> "+dataPath+id+".bench").CombinedOutput() // put in "%id%.bench" for later use, in the _data directory
+		"-memprofile "+dataPath+id+"/mem.pprof",           // record memory profile
+		"-cpuprofile "+dataPath+id+"/cpu.pprof",           // record cpu profile
+		"> "+dataPath+id+"/"+id+".bench").CombinedOutput() // put in "%id%.bench" for later use, in the _data directory
 	if output != nil {
 		fmt.Printf("%s", string(output))
 	}
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("Error running powershell command: " + err.Error())
 	}
 }
 

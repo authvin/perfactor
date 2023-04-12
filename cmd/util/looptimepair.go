@@ -3,8 +3,8 @@ package util
 import "go/ast"
 
 type LoopTimePair struct {
-	loop *ast.ForStmt
-	time int64
+	Loop *ast.ForStmt
+	Time int64
 }
 
 type LoopTimeArray []LoopTimePair
@@ -15,7 +15,7 @@ func (l LoopTimeArray) Len() int {
 
 func (l LoopTimeArray) Less(i, j int) bool {
 	// we want to sort greatest first
-	return l[i].time > l[j].time
+	return l[i].Time > l[j].Time
 }
 
 func (l LoopTimeArray) Swap(i, j int) {
