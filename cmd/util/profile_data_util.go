@@ -40,7 +40,7 @@ func FilterLoopsUsingProfileData(safeLoops []token.Pos, sorted LoopTimeArray, fs
 			// if the Time is 0, then the Loop is not worth making concurrent
 			continue
 		}
-		println("Loop at line ", fset.Position(loop.Pos()).Line, " has a total Time of ", time)
+		//println("Loop at line ", fset.Position(loop.Pos()).Line, " has a total Time of ", time)
 		output = append(output, lt)
 	}
 	return output

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"github.com/google/uuid"
 	"github.com/plus3it/gorecurcopy"
 	"github.com/spf13/cobra"
@@ -8,8 +9,8 @@ import (
 	"go/types"
 	"os"
 	"perfactor/cmd/util"
-	"strconv"
 	"strings"
+	"time"
 )
 
 var fullCmd = &cobra.Command{
@@ -148,6 +149,7 @@ func full(cmd *cobra.Command, args []string) {
 	// write the finished program to output
 	util.WriteModifiedAST(fset, astFile, output+name+p+fileName)
 	println("Final version written to " + output + name + p + fileName)
-	println("Original runtime: " + strconv.FormatInt(prof.DurationNanos, 10))
-	println("New runtime: " + strconv.FormatInt(bestDuration, 10))
+	fmt.Println(fmt.Sprintf("Original runtime: %s", time.Duration(prof.DurationNanos)))
+	fmt.Println(fmt.Sprintf("New runtime: %s", time.Duration(bestDuration)))
+	//println("New runtime: " + strconv.FormatInt(bestDuration, 10))
 }
