@@ -48,14 +48,18 @@ func full(cmd *cobra.Command, args []string) {
 		println("Please provide an input path")
 		return
 	}
+	// Generate a UUID if no name is provided
 	if len(name) == 0 {
 		u := uuid.New()
 		name = u.String()
 	}
 
+	// The tmp folder - underscore is go nomenclature for an ignored folder
+	// it's called tmp to indicate that contents can be deleted without warning
 	tmpPath := "_tmp" + p + name + p
 	// clear the tmp subfolder if it exists
 	util.CleanOrCreateTempFolder(tmpPath)
+
 	// copy the project folder to the temp folder
 	err := gorecurcopy.CopyDirectory(projectPath, tmpPath)
 	if err != nil {
@@ -73,9 +77,9 @@ func full(cmd *cobra.Command, args []string) {
 	// Get the profiling data from file
 	prof := util.GetProfileDataFromFile(tmpPath + "cpu.pprof")
 
-	fset := token.NewFileSet()
-	astFile := util.GetASTFromFile(projectPath+fileName, fset)
-	//originalAstFile := astcopy.File(astFile) // In case we need the original file at some point?
+	//Program reads the input file and finds all for-loops
+	fileSet := token.NewFileSet()
+	astFile := util.GetASTFromFile(projectPath+fileName, fileSet)
 	if astFile == nil {
 		println("Error getting AST from file")
 		return
@@ -83,45 +87,58 @@ func full(cmd *cobra.Command, args []string) {
 	forLoops := util.FindForLoopsInAST(astFile)
 
 	//Program analyses the given input file to find for-loops which are safe to make concurrent
-	safeLoops := util.FindSafeLoopsForRefactoring(forLoops, fset)
+	safeLoops := util.FindSafeLoopsForRefactoring(forLoops, fileSet)
 
-	sortedLoops := util.SortLoopsUsingProfileData(prof, forLoops, fset)
+	//Program analyses the profiling data to find which for-loops to prioritize
+	sortedLoops := util.SortLoopsUsingProfileData(prof, forLoops, fileSet)
 
-	//Program analyses this profiling data to find which for-loops to prioritize, and which to ignore
-	loopsToRefactor := util.FilterLoopsUsingProfileData(safeLoops, sortedLoops, fset)
+	//Program combines the previous two to find which for-loops to prioritize, and which to ignore
+	loopsToRefactor := util.FilterLoopsUsingProfileData(safeLoops, sortedLoops, fileSet)
 
+	// Variable to keep track of the best duration
+	// for now it's a strict greater-than, but we could make it require a percentage increase
 	bestDuration := prof.DurationNanos
 
-	//Program performs the refactoring of one loop
+	//Program performs the refactoring of each loop
 	for _, lt := range loopsToRefactor {
+
+		// New fileset and AST, which is needed because the type checker bugs out if we don't
 		newFileSet := token.NewFileSet()
-		loopPos := lt.Loop.Pos()
-		// make a deep copy of the ast file, so that we can discard it if the tests fail or it doesn't provide a benefit
+		// Get the AST from the file in the tmp folder. This will either be the original file, or the most recent accepted change
 		newAST := util.GetASTFromFile(tmpPath+fileName, newFileSet)
+
 		// Get the type checker
 		// We need to get a new type checker for each copy of the AST, because otherwise it doesn't know the types
 		info := util.GetTypeCheckerInfo(newAST, newFileSet)
 		checker := types.Checker{
 			Info: info,
 		}
+
+		loopPos := lt.Loop.Pos()
+
 		// Do the refactoring of the loopPos
 		util.MakeLoopConcurrent(newAST, newFileSet, loopPos, checker)
 
-		//Program writes current state to file, into a folder with a copy of the project
+		//Program writes current state of AST to file, into a folder with a copy of the project (the tmp folder)
 		util.WriteModifiedAST(newFileSet, newAST, tmpPath+fileName)
 
 		//Run the tests. If these pass, then it runs the benchmark
 		testResult := util.RunCode(flags, "NONE", testName, name, tmpPath+fileName, tmpPath, false)
 		if strings.Contains(testResult, "FAIL") {
-			//If any tests fail, we discard the change and go back to step 5
+			//If any tests fail, we discard the change and go back to the start of the loop
 			println("Test failed in " + name + " for loop at line " + string(rune(newFileSet.Position(loopPos).Line)))
+			// write old version back, so we can try the next loop
+			util.WriteModifiedAST(fileSet, astFile, tmpPath+fileName)
 			continue
 		}
+
 		//If the tests pass, we run the benchmark
 		benchmarkResult := util.RunCode(flags, benchName, "NONE", name, tmpPath+fileName, tmpPath, true)
 		if strings.Contains(benchmarkResult, "FAIL") {
-			//If any tests fail, we discard the change and go back to step 5
+			//If any tests fail, we discard the change and go back to the start of the loop
 			println("Benchmark failed in " + name + " for loop at line " + string(rune(newFileSet.Position(loopPos).Line)))
+			// write old version back, so we can try the next loop
+			util.WriteModifiedAST(fileSet, astFile, tmpPath+fileName)
 			continue
 		}
 		//If the benchmark scores better than the previous result, we keep the change.
@@ -133,12 +150,11 @@ func full(cmd *cobra.Command, args []string) {
 			bestDuration = tempProf.DurationNanos
 			// update the astFile to the new copy
 			astFile = newAST
-			fset = newFileSet
+			fileSet = newFileSet
 		} else {
 			// since we're not keeping the change, write the old ast back to file
-			util.WriteModifiedAST(fset, astFile, tmpPath+fileName)
+			util.WriteModifiedAST(fileSet, astFile, tmpPath+fileName)
 		}
-		//Go back to step 5 until there are no more loops left that we want to refactor
 	}
 	// create output folder
 	err = os.MkdirAll(output+name+p, os.ModePerm)
@@ -147,7 +163,7 @@ func full(cmd *cobra.Command, args []string) {
 		return
 	}
 	// write the finished program to output
-	util.WriteModifiedAST(fset, astFile, output+name+p+fileName)
+	util.WriteModifiedAST(fileSet, astFile, output+name+p+fileName)
 	println("Final version written to " + output + name + p + fileName)
 	fmt.Println(fmt.Sprintf("Original runtime: %s", time.Duration(prof.DurationNanos)))
 	fmt.Println(fmt.Sprintf("New runtime: %s", time.Duration(bestDuration)))
