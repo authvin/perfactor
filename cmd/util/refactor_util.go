@@ -1,6 +1,7 @@
 package util
 
 import (
+	"github.com/owenrumney/go-sarif/sarif"
 	"go/ast"
 	"go/token"
 	"go/types"
@@ -116,7 +117,7 @@ func MakeLoopConcurrent(astFile *ast.File, fset *token.FileSet, loopPos token.Po
 
 // FindSafeLoopsForRefactoring finds loops that can be refactored to be concurrent
 // It returns a list of Loop positions pointing to for and range loops
-func FindSafeLoopsForRefactoring(forLoops []*ast.ForStmt, f *token.FileSet) []token.Pos {
+func FindSafeLoopsForRefactoring(forLoops []*ast.ForStmt, f *token.FileSet, run *sarif.Run, fpath string) []token.Pos {
 	// A map to store Loop variable usage information
 	loopVarUsage := make(map[*ast.Ident]bool)
 
@@ -145,21 +146,31 @@ func FindSafeLoopsForRefactoring(forLoops []*ast.ForStmt, f *token.FileSet) []to
 		// The check we're doing is if the Loop does not write to a variable outside the Loop
 		// Thus, if that doesn't trigger, we assume it's safe to refactor
 		// add to list of loops that can be made concurrent
-		if LoopCanBeConcurrent(loop, loopVarUsage, f) {
+		if LoopCanBeConcurrent(loop, loopVarUsage, f, run, fpath) {
 			concurrentLoops = append(concurrentLoops, loop.Pos())
 		}
 	}
 	return concurrentLoops
 }
 
-func LoopCanBeConcurrent(loop *ast.ForStmt, loopVarUsage map[*ast.Ident]bool, f *token.FileSet) bool {
+func LoopCanBeConcurrent(loop *ast.ForStmt, loopVarUsage map[*ast.Ident]bool, f *token.FileSet, run *sarif.Run, fpath string) bool {
 	canMakeConcurrent := true
 	ast.Inspect(loop, func(n ast.Node) bool {
 		if ident, ok := n.(*ast.Ident); ok {
 			if _, exists := loopVarUsage[ident]; exists {
 				if loopVarUsage[ident] {
 					// This is a good candidate for a unit test
-					println("Cannot make Loop at line", f.Position(loop.Pos()).Line, "concurrent because it writes to '"+ident.Name+"' declared outside the Loop")
+					//println("Cannot make Loop at line", f.Position(loop.Pos()).Line, "concurrent because it writes to '"+ident.Name+"' declared outside the Loop")
+					if run != nil {
+						run.AddResult("PERFACTOR_RULE_001").
+							WithLocation(sarif.NewLocationWithPhysicalLocation(sarif.NewPhysicalLocation().
+								WithArtifactLocation(sarif.NewArtifactLocation().
+									WithUri(fpath)).
+								WithRegion(sarif.NewRegion().
+									WithStartLine(f.Position(loop.Pos()).Line).
+									WithStartColumn(f.Position(loop.Pos()).Column)))).
+							WithMessage(sarif.NewMessage().WithText("Cannot make Loop concurrent because it writes to '" + ident.Name + "' declared outside the Loop"))
+					}
 					canMakeConcurrent = false
 					// no need to look into subtrees of this node
 					return false

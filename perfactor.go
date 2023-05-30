@@ -2,14 +2,8 @@ package main
 
 import (
 	"fmt"
-	"github.com/google/pprof/profile"
-	"go/parser"
-	"go/token"
-	"os"
 	"os/exec"
 	"perfactor/cmd"
-	"perfactor/helper"
-	"regexp"
 )
 
 // Overview:
@@ -79,6 +73,7 @@ func ProcessBenchData(id ...string) {
 	// Format: https://go.googlesource.com/proposal/+/master/design/14313-benchmark-format.md
 }
 
+/*
 // Find possible refactorings for a given target
 func findPossibleRefactorings(path string, src any) {
 	// keep all code versions in memory
@@ -187,6 +182,7 @@ func findPossibleRefactorings(path string, src any) {
 
 	fmt.Println()
 }
+*/
 
 // Apply refactoring (temp folder, or actual code)
 func applyRefactoring() {

@@ -38,7 +38,9 @@ func FindAssignmentsInLoop(loop *ast.ForStmt, loopVarUsage map[*ast.Ident]bool) 
 	})
 }
 
-func FindForLoopsInAST(astFile ast.Node) []*ast.ForStmt {
+// FindForLoopsInAST The valid function argument is for special cases, like filtering for specific line numbers
+// leave as nil to not do any filtering
+func FindForLoopsInAST(astFile ast.Node, fset *token.FileSet, valid func(ast.Node, *token.FileSet) bool) []*ast.ForStmt {
 	// array of AST positions for for loops
 	var forLoops []*ast.ForStmt
 
@@ -46,6 +48,9 @@ func FindForLoopsInAST(astFile ast.Node) []*ast.ForStmt {
 	ast.Inspect(astFile, func(n ast.Node) bool {
 		switch n := n.(type) {
 		case *ast.ForStmt:
+			if valid != nil && !valid(n, fset) {
+				return true
+			}
 			//fmt.Println("Found a for Loop at line", fset.Position(n.Pos()).Line)
 			forLoops = append(forLoops, n)
 		}
@@ -59,7 +64,7 @@ func GetASTFromFile(inputPath string, fset *token.FileSet) *ast.File {
 	f, err := parser.ParseFile(fset, inputPath, nil, parser.ParseComments)
 	if err != nil {
 		println("Failed to parse AST from file: " + err.Error())
-		return nil
+		os.Exit(0)
 	}
 	return f
 }

@@ -49,6 +49,7 @@ func full(cmd *cobra.Command, args []string) {
 		return
 	}
 	// Generate a UUID if no name is provided
+	// mktemp
 	if len(name) == 0 {
 		u := uuid.New()
 		name = u.String()
@@ -84,10 +85,10 @@ func full(cmd *cobra.Command, args []string) {
 		println("Error getting AST from file")
 		return
 	}
-	forLoops := util.FindForLoopsInAST(astFile)
+	forLoops := util.FindForLoopsInAST(astFile, fileSet, nil)
 
 	//Program analyses the given input file to find for-loops which are safe to make concurrent
-	safeLoops := util.FindSafeLoopsForRefactoring(forLoops, fileSet)
+	safeLoops := util.FindSafeLoopsForRefactoring(forLoops, fileSet, nil, projPath+fileName)
 
 	//Program analyses the profiling data to find which for-loops to prioritize
 	sortedLoops := util.SortLoopsUsingProfileData(prof, forLoops, fileSet)
