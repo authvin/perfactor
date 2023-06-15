@@ -2,15 +2,16 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/google/uuid"
-	"github.com/plus3it/gorecurcopy"
-	"github.com/spf13/cobra"
 	"go/token"
 	"go/types"
 	"os"
 	"perfactor/cmd/util"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/plus3it/gorecurcopy"
+	"github.com/spf13/cobra"
 )
 
 var fullCmd = &cobra.Command{
@@ -158,15 +159,14 @@ func full(cmd *cobra.Command, args []string) {
 		}
 	}
 	// create output folder
-	err = os.MkdirAll(output+name+p, os.ModePerm)
+	err = os.MkdirAll(output+p+name+p, os.ModePerm)
 	if err != nil {
 		println("Error creating output folder: " + err.Error())
 		return
 	}
 	// write the finished program to output
-	util.WriteModifiedAST(fileSet, astFile, output+name+p+fileName)
-	println("Final version written to " + output + name + p + fileName)
-	fmt.Println(fmt.Sprintf("Original runtime: %s", time.Duration(prof.DurationNanos)))
-	fmt.Println(fmt.Sprintf("New runtime: %s", time.Duration(bestDuration)))
-	//println("New runtime: " + strconv.FormatInt(bestDuration, 10))
+	util.WriteModifiedAST(fileSet, astFile, output+p+name+p+fileName)
+	println("Final version written to " + output + p + name + p + fileName)
+	fmt.Printf("Original runtime: %s\n", time.Duration(prof.DurationNanos))
+	fmt.Printf("New runtime: %s\n", time.Duration(bestDuration))
 }

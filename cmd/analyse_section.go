@@ -2,8 +2,6 @@ package cmd
 
 import (
 	"bytes"
-	"github.com/owenrumney/go-sarif/sarif"
-	"github.com/spf13/cobra"
 	"go/ast"
 	"go/token"
 	"os"
@@ -11,6 +9,9 @@ import (
 	"perfactor/cmd/util"
 	"runtime"
 	"strings"
+
+	"github.com/owenrumney/go-sarif/sarif"
+	"github.com/spf13/cobra"
 )
 
 var analyseCmd = &cobra.Command{

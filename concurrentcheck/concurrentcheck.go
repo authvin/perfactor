@@ -3,11 +3,16 @@ package concurrentcheck
 // inspired by "Using go/analysis to write a custom linter" - F Arslan
 
 import (
-	"github.com/owenrumney/go-sarif/sarif"
+	"bytes"
 	"go/ast"
+	"go/format"
 	"go/token"
-	"golang.org/x/tools/go/analysis"
+	"go/types"
+	"perfactor/cmd/util"
 	"reflect"
+
+	"github.com/owenrumney/go-sarif/sarif"
+	"golang.org/x/tools/go/analysis"
 )
 
 var Analyzer = &analysis.Analyzer{
@@ -21,8 +26,14 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	// each file is an AST -> inspect each AST. Or do we use a visitor?
 	sarifRun := sarif.NewRun("name_placeholder", "uri_placeholder")
 	for _, file := range pass.Files {
+		info := util.GetTypeCheckerInfo(file, pass.Fset)
+		checker := types.Checker{
+			Info: info,
+		}
 		// First, we need to be in a for loop
 		ast.Walk(&ConcurrentLoopVisitor{
+			// need to add a checker here!
+			checker:      checker,
 			f:            pass.Fset,
 			run:          *sarifRun,
 			fileLocation: sarif.NewPhysicalLocation().WithArtifactLocation(sarif.NewArtifactLocation().WithUri(pass.Fset.Position(file.Pos()).Filename)),
@@ -39,13 +50,42 @@ type ConcurrentLoopVisitor struct {
 	run          sarif.Run
 	fileLocation *sarif.PhysicalLocation
 	pass         *analysis.Pass
+	checker      types.Checker
 }
 
 func (w ConcurrentLoopVisitor) Visit(n ast.Node) ast.Visitor {
 	if forStmt, ok := n.(*ast.ForStmt); ok {
 		assignedTo := findAssignmentsInLoop(forStmt)
 		if w.canBeConcurrent(forStmt, assignedTo) {
-			w.pass.Reportf(forStmt.Pos(), "This for loop can be made concurrent")
+			// Get the statements that will replace the for loop
+			newStmts := util.GetConcurrentLoop(forStmt, w.f, w.checker)
+			var buf bytes.Buffer
+			for _, stmt := range newStmts {
+				// write each statement to the buffer
+				if err := format.Node(&buf, token.NewFileSet(), stmt); err != nil {
+					return nil
+				}
+				// newline between the statements
+				buf.WriteByte('\n')
+			}
+			//w.pass.Reportf(forStmt.Pos(), "This for loop can be made concurrent")
+			w.pass.Report(analysis.Diagnostic{
+				Pos:     n.Pos(),
+				End:     n.Pos() + token.Pos(len("for")),
+				Message: "This for loop can be made concurrent",
+				SuggestedFixes: []analysis.SuggestedFix{{
+					Message: "Make loop concurrent",
+					TextEdits: []analysis.TextEdit{{
+						Pos:     n.Pos(),
+						End:     n.End(),
+						NewText: buf.Bytes(),
+					}, {
+						Pos:     token.NoPos,
+						End:     token.NoPos,
+						NewText: []byte("\n\"sync\""),
+					}},
+				}},
+			})
 		}
 	}
 	return w

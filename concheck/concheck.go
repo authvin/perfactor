@@ -1,8 +1,9 @@
-package main
+package concheck
 
 import (
-	"golang.org/x/tools/go/analysis/singlechecker"
 	"perfactor/concurrentcheck"
+
+	"golang.org/x/tools/go/analysis/singlechecker"
 )
 
 func main() {

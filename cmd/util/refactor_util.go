@@ -1,118 +1,186 @@
 package util
 
 import (
-	"github.com/owenrumney/go-sarif/sarif"
+	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
+	"math/rand"
+	"time"
+
+	"github.com/owenrumney/go-sarif/sarif"
 	"golang.org/x/tools/go/ast/astutil"
 )
 
+// Steps:
+//1 Add the import
+//
+//2 Add the waitgroup declaration
+//3 create a block for the goroutine
+//4 create a defer Done call in the block
+//5 place the for-loop's statements inside the goroutine statements
+//6 add the for-loop's loop variable as an argument to the goroutine with the same name - deliberate shadowing
+// 	- do this for all accessed non-const, non-reference values?
+//7 create a wg.Add(1) call
+//8 empty the for-loop's list of statements and add the wg.Add(1) statement and goroutine statement to it
+//9 add a wait-call after the for-loop
+
+func GetConcurrentLoop(n *ast.ForStmt, fset *token.FileSet, checker types.Checker) []ast.Stmt {
+	stmts := make([]ast.Stmt, 0)
+	// Instead of checking if "wg" exists, we add a four-digit number to the end of it. Not ideal, but mostly functional. Known issue.
+	source := rand.NewSource(time.Now().UnixNano())
+	r := rand.New(source)
+	wgIdent := ast.NewIdent("wg" + fmt.Sprintf("%04d", r.Intn(10000)))
+
+	//-2- insert the waitgroup right before the for-loop
+	stmts = append(stmts, makeWaitgroupDecl(wgIdent))
+	//-3- && -4- Create the block for the goroutine, and add the wg.Done() call to a deferred call
+	block := makeGoroutineBlock(wgIdent)
+	//-5- append all the statements in the for Loop to the body of the goroutine
+	block.List = append(block.List, n.Body.List...)
+
+	//-6- set up the go stmt with fields with the types from the rhs of loop var assign statements
+	goStmt := makeGoStmt(n, checker, block)
+
+	//-7- Adding one to the wait group per goroutine
+	wgAddCall := makeAddCall(wgIdent)
+
+	//-8- Place the go stmt in the for Loop
+	newForStmt := &ast.ForStmt{
+		Cond: n.Cond,
+		Post: n.Post,
+		Init: n.Init,
+		Body: &ast.BlockStmt{
+			List:   []ast.Stmt{wgAddCall, goStmt},
+			Lbrace: n.Body.Lbrace,
+			Rbrace: n.Body.Rbrace,
+		},
+		For: n.For,
+	}
+
+	stmts = append(stmts, newForStmt)
+
+	//-9- place the wait call after the for-loop
+	wgWaitCall := makeWaitCall(wgIdent)
+
+	stmts = append(stmts, wgWaitCall)
+
+	return stmts
+}
+
 // Function to insert goroutines into for loops that are already known to be safe to refactor
 func MakeLoopConcurrent(astFile *ast.File, fset *token.FileSet, loopPos token.Pos, checker types.Checker) {
+	// add import for sync and waitgroup
+	//-1- Is this the right place to do this? This requires the full astFile, which is not ideal
+	astutil.AddImport(fset, astFile, "sync")
 	astutil.Apply(astFile, func(cursor *astutil.Cursor) bool {
 		node := cursor.Node()
 		// first half makes sure it's a for statement, second makes sure it's the one in the correct position
 		if forLoop, ok := node.(*ast.ForStmt); ok && fset.Position(forLoop.Pos()).Offset == fset.Position(loopPos).Offset {
-			// add import for sync and waitgroup
-			astutil.AddImport(fset, astFile, "sync")
-			wgIdent := ast.NewIdent("wg")
-			wgType := &ast.SelectorExpr{
-				X:   ast.NewIdent("sync"),
-				Sel: ast.NewIdent("WaitGroup"),
-			}
-
-			wgDecl := &ast.DeclStmt{
-				Decl: &ast.GenDecl{
-					Tok: token.VAR,
-					Specs: []ast.Spec{
-						&ast.ValueSpec{
-							Names: []*ast.Ident{wgIdent},
-							Type:  wgType,
-						},
-					},
-				},
-			}
-			cursor.InsertBefore(wgDecl)
-			block := &ast.BlockStmt{
-				List: []ast.Stmt{
-					&ast.DeferStmt{
-						Call: &ast.CallExpr{
-							Fun: &ast.SelectorExpr{
-								X:   wgIdent,
-								Sel: ast.NewIdent("Done"),
-							},
-						},
-					},
-				},
-			}
-			// append all the statements in the for Loop to the body of the goroutine
-			block.List = append(block.List, forLoop.Body.List...)
-
-			// get the type of the variable being assigned to in the init statement
-			//forLoop.Init.(*ast.AssignStmt)
-			l := len(forLoop.Init.(*ast.AssignStmt).Rhs) - 1
-
-			var typeList []*ast.Field
-
-			// for each ident in the lhs of the for Loop init
-			// create a field with the type from the rhs
-
-			for i := 0; i < len(forLoop.Init.(*ast.AssignStmt).Lhs); i++ {
-				typ := checker.TypeOf(forLoop.Init.(*ast.AssignStmt).Rhs[l])
-				ident := forLoop.Init.(*ast.AssignStmt).Lhs[i].(*ast.Ident)
-				typeList = append(typeList, &ast.Field{
-					Type:  ast.NewIdent(typ.String()),
-					Names: []*ast.Ident{ast.NewIdent(ident.Name)},
-				})
-			}
-
-			goStmt := &ast.GoStmt{
-				// create a goroutine
-				Call: &ast.CallExpr{
-					Fun: &ast.FuncLit{
-						Type: &ast.FuncType{
-							Params: &ast.FieldList{
-								// insert the list of types created above
-								List: typeList,
-							},
-						},
-						Body: block,
-					},
-					Args: forLoop.Init.(*ast.AssignStmt).Lhs,
-				},
-			}
-
-			// Adding one to the wait group per goroutine
-			wgAddCall := &ast.ExprStmt{
-				X: &ast.CallExpr{
-					Fun: &ast.SelectorExpr{
-						X:   wgIdent,
-						Sel: ast.NewIdent("Add"),
-					},
-					Args: []ast.Expr{
-						ast.NewIdent("1"),
-					},
-				},
-			}
-
-			// Place the go stmt in the for Loop
-			forLoop.Body.List = []ast.Stmt{wgAddCall, goStmt}
-
-			wgWaitCall := &ast.ExprStmt{
-				X: &ast.CallExpr{
-					Fun: &ast.SelectorExpr{
-						X:   wgIdent,
-						Sel: ast.NewIdent("Wait"),
-					},
-				},
-			}
-			cursor.InsertAfter(wgWaitCall)
-
+			stmts := GetConcurrentLoop(forLoop, fset, checker)
+			cursor.InsertBefore(stmts[0])
+			cursor.Replace(stmts[1])
+			cursor.InsertAfter(stmts[2])
 			return false
 		}
 		return true
 	}, nil)
+}
+
+func makeWaitgroupDecl(wgIdent *ast.Ident) ast.Stmt {
+	wgType := &ast.SelectorExpr{
+		X:   ast.NewIdent("sync"),
+		Sel: ast.NewIdent("WaitGroup"),
+	}
+
+	return &ast.DeclStmt{
+		Decl: &ast.GenDecl{
+			Tok: token.VAR,
+			Specs: []ast.Spec{
+				&ast.ValueSpec{
+					Names: []*ast.Ident{wgIdent},
+					Type:  wgType,
+				},
+			},
+		},
+	}
+}
+
+func makeGoroutineBlock(wgIdent *ast.Ident) *ast.BlockStmt {
+	return &ast.BlockStmt{
+		List: []ast.Stmt{
+			//-4- add defer wg.Done()
+			&ast.DeferStmt{
+				Call: &ast.CallExpr{
+					Fun: &ast.SelectorExpr{
+						X:   wgIdent,
+						Sel: ast.NewIdent("Done"),
+					},
+				},
+			},
+		},
+	}
+}
+
+func makeGoStmt(forLoop *ast.ForStmt, checker types.Checker, block *ast.BlockStmt) *ast.GoStmt {
+	// get the type of the variable being assigned to in the init statement
+	l := len(forLoop.Init.(*ast.AssignStmt).Rhs) - 1
+
+	var typeList []*ast.Field
+
+	// for each ident in the lhs of the for Loop init
+
+	for i := 0; i < len(forLoop.Init.(*ast.AssignStmt).Lhs); i++ {
+		typ := checker.TypeOf(forLoop.Init.(*ast.AssignStmt).Rhs[l])
+		ident := forLoop.Init.(*ast.AssignStmt).Lhs[i].(*ast.Ident)
+		typeList = append(typeList, &ast.Field{
+			Type:  ast.NewIdent(typ.String()),
+			Names: []*ast.Ident{ast.NewIdent(ident.Name)},
+		})
+	}
+
+	return &ast.GoStmt{
+		// create a goroutine
+		Call: &ast.CallExpr{
+			Fun: &ast.FuncLit{
+				Type: &ast.FuncType{
+					Params: &ast.FieldList{
+						// insert the list of types created above
+						List: typeList,
+					},
+				},
+				// insert the block created above
+				Body: block,
+			},
+			// add the loop variable as an argument
+			Args: forLoop.Init.(*ast.AssignStmt).Lhs,
+		},
+	}
+}
+
+func makeAddCall(wgIdent *ast.Ident) *ast.ExprStmt {
+	return &ast.ExprStmt{
+		X: &ast.CallExpr{
+			Fun: &ast.SelectorExpr{
+				X:   wgIdent,
+				Sel: ast.NewIdent("Add"),
+			},
+			Args: []ast.Expr{
+				ast.NewIdent("1"),
+			},
+		},
+	}
+}
+
+func makeWaitCall(wgIdent *ast.Ident) *ast.ExprStmt {
+	return &ast.ExprStmt{
+		X: &ast.CallExpr{
+			Fun: &ast.SelectorExpr{
+				X:   wgIdent,
+				Sel: ast.NewIdent("Wait"),
+			},
+		},
+	}
 }
 
 // FindSafeLoopsForRefactoring finds loops that can be refactored to be concurrent
@@ -135,8 +203,6 @@ func FindSafeLoopsForRefactoring(forLoops []*ast.ForStmt, f *token.FileSet, run 
 	for _, loop := range forLoops {
 		FindAssignmentsInLoop(loop, loopVarUsage)
 	}
-
-	// Collect all range Loop variables
 
 	// list of loops that can be made concurrent
 	var concurrentLoops []token.Pos
