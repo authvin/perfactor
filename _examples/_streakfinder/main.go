@@ -13,7 +13,7 @@ func main() {
 	var length = 600
 	var max = 500
 	var seed int64 = 32
-	var seedsToCheck int64 = 1
+	var seedsToCheck int64 = 5
 	var err error
 	if len(args) > 1 {
 		length, err = strconv.Atoi(args[1])
@@ -57,10 +57,10 @@ func runProgram(length int, max int, seed int64, seedsToCheck int64) [][]int {
 }
 
 func generateArray(length int, max int, seed int64) []int {
-	rand.NewSource(seed)
+	r := rand.New(rand.NewSource(seed))
 	slice := make([]int, length)
-	for i := 1; i < length; i++ {
-		slice[i] = rand.Intn(max)
+	for i := 0; i < length; i++ {
+		slice[i] = r.Intn(max)
 	}
 	return slice
 }

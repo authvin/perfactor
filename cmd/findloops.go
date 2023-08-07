@@ -38,22 +38,22 @@ func findloops(cmd *cobra.Command, args []string) {
 		fmt.Println("Error parsing AST from file: " + err.Error())
 		return
 	}
-	forLoops := util.FindForLoopsInAST(astFile, fset, nil)
+	loops := util.FindForLoopsInAST(astFile, fset, nil)
 	prof := util.GetProfileDataFromFile(ProfileSource)
-	dataFromProfileSorting := util.SortLoopsUsingProfileData(prof, forLoops, fset)
+	dataFromProfileSorting := util.SortLoopsUsingProfileData(prof, loops, fset)
 
 	// Look through the for loops and range loops and find the ones that are possible to make concurrent
-	// This will be done by looking at the variables that are assigned in the loop and seeing if they are declared outside of the loop
+	// This will be done by looking at the variables that are assigned in the loop and seeing if they are declared outside the loop
 	// If they are, then the loop cannot be made concurrent
 	// If they are not, then the loop can be made concurrent
-	safeLoops := util.FindSafeLoopsForRefactoring(forLoops, fset, nil, Source)
+	safeLoops := util.FindSafeLoopsForRefactoring(loops, fset, nil, Source, nil)
 
 	// filter safeLoops using the data from the profiling
 	if dataFromProfileSorting != nil {
 		loops := util.FilterLoopsUsingProfileData(safeLoops, dataFromProfileSorting, fset)
 		safeLoops = make([]token.Pos, len(loops))
 		for i, loop := range loops {
-			safeLoops[i] = loop.Loop.Pos()
+			safeLoops[i] = loop.Loop.Pos
 		}
 	}
 

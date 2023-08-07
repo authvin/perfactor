@@ -8,12 +8,17 @@ import (
 	"go/format"
 	"go/token"
 	"go/types"
+	"golang.org/x/tools/go/analysis/singlechecker"
 	"perfactor/cmd/util"
 	"reflect"
 
 	"github.com/owenrumney/go-sarif/sarif"
 	"golang.org/x/tools/go/analysis"
 )
+
+func main() {
+	singlechecker.Main(Analyzer)
+}
 
 var Analyzer = &analysis.Analyzer{
 	Name:       "concheck",

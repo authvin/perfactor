@@ -3,7 +3,6 @@ package util
 import (
 	"fmt"
 	"github.com/google/pprof/profile"
-	"go/ast"
 	"go/token"
 	"os"
 	"perfactor/graph"
@@ -33,7 +32,7 @@ func FilterLoopsUsingProfileData(safeLoops []token.Pos, sorted LoopTimeArray, fs
 	for _, lt := range sorted {
 		loop, time := lt.Loop, lt.Time
 		// check if the Loop is in the list of safe loops
-		if !contains(safeLoops, loop.Pos()) {
+		if !contains(safeLoops, loop.Pos) {
 			continue
 		}
 		if time == 0 {
@@ -55,7 +54,7 @@ func contains(loops []token.Pos, pos token.Pos) bool {
 	return false
 }
 
-func SortLoopsUsingProfileData(prof *profile.Profile, forLoops []*ast.ForStmt, fset *token.FileSet) LoopTimeArray {
+func SortLoopsUsingProfileData(prof *profile.Profile, forLoops []Loop, fset *token.FileSet) LoopTimeArray {
 	// find the gr nodes corresponding to the for loops
 	// look through the profile data and find the for loops that are the most expensive
 	gr := graph.GetGraphFromProfile(prof)
@@ -64,8 +63,8 @@ func SortLoopsUsingProfileData(prof *profile.Profile, forLoops []*ast.ForStmt, f
 	for i, loop := range forLoops {
 		totalCumulativeTime[i].Loop = loop
 		// get the line numbers of the Loop
-		startLine := fset.Position(loop.Pos()).Line
-		endLine := fset.Position(loop.End()).Line
+		startLine := fset.Position(loop.Pos).Line
+		endLine := fset.Position(loop.End).Line
 		// find the node in the gr with this line number
 		nodes := gr.FindNodesByLine(startLine, endLine)
 		for _, node := range nodes {

@@ -4,8 +4,12 @@ import (
 	"fmt"
 	"go/token"
 	"go/types"
+	"golang.org/x/mod/modfile"
+	"log"
 	"os"
+	"os/exec"
 	"perfactor/cmd/util"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,6 +32,7 @@ var fileName string
 var output string
 var testName string
 var flags string
+var accept string
 
 const p = string(os.PathSeparator)
 
@@ -39,6 +44,7 @@ func init() {
 	fullCmd.Flags().StringVarP(&output, "output", "o", "_data", "The path to the output folder")
 	fullCmd.Flags().StringVarP(&testName, "testname", "t", "NONE", "The name of the test to run")
 	fullCmd.Flags().StringVarP(&flags, "flags", "", "", "Any flags to pass to the program")
+	fullCmd.Flags().StringVarP(&accept, "accept", "a", "", "Accept an identifier in a given loop")
 	rootCmd.AddCommand(fullCmd)
 }
 
@@ -78,6 +84,10 @@ func full(cmd *cobra.Command, args []string) {
 
 	// Get the profiling data from file
 	prof := util.GetProfileDataFromFile(tmpPath + "cpu.pprof")
+	if prof == nil {
+		println("Error getting profiling data")
+		return
+	}
 
 	//Program reads the input file and finds all for-loops
 	fileSet := token.NewFileSet()
@@ -86,13 +96,30 @@ func full(cmd *cobra.Command, args []string) {
 		println("Error getting AST from file")
 		return
 	}
-	forLoops := util.FindForLoopsInAST(astFile, fileSet, nil)
+	loops := util.FindForLoopsInAST(astFile, fileSet, nil)
+
+	// parse the accept string
+	accepts := strings.Split(accept, ",")
+	acceptMap := make(map[string]int, 0)
+	for _, a := range accepts {
+		str := strings.Split(a, ":")
+		if len(str) != 2 {
+			println("Invalid accept string")
+			continue
+		}
+		line, err := strconv.Atoi(str[1])
+		if err != nil {
+			println("Invalid accept string")
+			continue
+		}
+		acceptMap[str[0]] = line
+	}
 
 	//Program analyses the given input file to find for-loops which are safe to make concurrent
-	safeLoops := util.FindSafeLoopsForRefactoring(forLoops, fileSet, nil, projPath+fileName)
+	safeLoops := util.FindSafeLoopsForRefactoring(loops, fileSet, nil, projPath+fileName, acceptMap)
 
 	//Program analyses the profiling data to find which for-loops to prioritize
-	sortedLoops := util.SortLoopsUsingProfileData(prof, forLoops, fileSet)
+	sortedLoops := util.SortLoopsUsingProfileData(prof, loops, fileSet)
 
 	//Program combines the previous two to find which for-loops to prioritize, and which to ignore
 	loopsToRefactor := util.FilterLoopsUsingProfileData(safeLoops, sortedLoops, fileSet)
@@ -100,6 +127,31 @@ func full(cmd *cobra.Command, args []string) {
 	// Variable to keep track of the best duration
 	// for now it's a strict greater-than, but we could make it require a percentage increase
 	bestDuration := prof.DurationNanos
+
+	if len(loopsToRefactor) == 0 {
+		println("No loops to refactor")
+		return
+	}
+
+	// run the go mod download command to get the dependencies
+	data, err := os.ReadFile(tmpPath + "go.mod")
+	if err != nil {
+		log.Fatalf("Failed to read file: %v", err)
+	}
+
+	modFile, err := modfile.Parse("go.mod", data, nil)
+	if err != nil {
+		log.Fatalf("Failed to parse file: %v", err)
+	}
+
+	for _, require := range modFile.Require {
+		//fmt.Println("Found URL:", require.Mod.Path)
+		err := exec.Command("go", "mod", "download", require.Mod.Path).Run()
+		if err != nil {
+			println("Error downloading dependencies")
+			return
+		}
+	}
 
 	//Program performs the refactoring of each loop
 	for _, lt := range loopsToRefactor {
@@ -116,7 +168,7 @@ func full(cmd *cobra.Command, args []string) {
 			Info: info,
 		}
 
-		loopPos := lt.Loop.Pos()
+		loopPos := lt.Loop.Pos
 
 		// Do the refactoring of the loopPos
 		util.MakeLoopConcurrent(newAST, newFileSet, loopPos, checker)
@@ -130,7 +182,7 @@ func full(cmd *cobra.Command, args []string) {
 			//If any tests fail, we discard the change and go back to the start of the loop
 			println("Test failed in " + name + " for loop at line " + string(rune(newFileSet.Position(loopPos).Line)))
 			// write old version back, so we can try the next loop
-			util.WriteModifiedAST(fileSet, astFile, tmpPath+fileName)
+			//util.WriteModifiedAST(fileSet, astFile, tmpPath+fileName)
 			continue
 		}
 

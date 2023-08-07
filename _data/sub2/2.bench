@@ -1,6 +1,0 @@
-goos: linux
-goarch: amd64
-pkg: _streakfinder
-BenchmarkRunProgram-8   	       1	15411008500 ns/op	778256816 B/op	23535900 allocs/op
-PASS
-ok  	_streakfinder	15.731s

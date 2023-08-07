@@ -6,16 +6,16 @@ import (
 	"go/token"
 	"go/types"
 	"math/rand"
+	"strings"
 	"time"
 
-	"github.com/owenrumney/go-sarif/sarif"
 	"golang.org/x/tools/go/ast/astutil"
 )
 
 // Steps:
 //1 Add the import
 //
-//2 Add the waitgroup declaration
+//2 Add the WaitGroup declaration
 //3 create a block for the goroutine
 //4 create a defer Done call in the block
 //5 place the for-loop's statements inside the goroutine statements
@@ -68,8 +68,53 @@ func GetConcurrentLoop(n *ast.ForStmt, fset *token.FileSet, checker types.Checke
 	return stmts
 }
 
-// Function to insert goroutines into for loops that are already known to be safe to refactor
+func GetConcurrentRangeLoop(n *ast.RangeStmt, fset *token.FileSet, checker types.Checker) []ast.Stmt {
+	stmts := make([]ast.Stmt, 0)
+	// Instead of checking if "wg" exists, we add a four-digit number to the end of it. Not ideal, but mostly functional. Known issue.
+	source := rand.NewSource(time.Now().UnixNano())
+	r := rand.New(source)
+	wgIdent := ast.NewIdent("wg" + fmt.Sprintf("%04d", r.Intn(10000)))
+
+	//-2- insert the waitgroup right before the for-loop
+	stmts = append(stmts, makeWaitgroupDecl(wgIdent))
+	//-3- && -4- Create the block for the goroutine, and add the wg.Done() call to a deferred call
+	block := makeGoroutineBlock(wgIdent)
+	//-5- append all the statements in the for Loop to the body of the goroutine
+	block.List = append(block.List, n.Body.List...)
+
+	//-6- set up the go stmt with fields with the types from the rhs of loop var assign statements
+	goStmt := makeGoStmtForRange(n, checker, block)
+
+	//-7- Adding one to the wait group per goroutine
+	wgAddCall := makeAddCall(wgIdent)
+
+	//-8- Place the go stmt in the for Loop
+	newForStmt := &ast.RangeStmt{
+		Key:   n.Key,
+		Value: n.Value,
+		X:     n.X,
+		Body: &ast.BlockStmt{
+			List:   []ast.Stmt{wgAddCall, goStmt},
+			Lbrace: n.Body.Lbrace,
+			Rbrace: n.Body.Rbrace,
+		},
+		For:    n.For,
+		Tok:    n.Tok,
+		TokPos: n.TokPos,
+	}
+
+	stmts = append(stmts, newForStmt)
+
+	//-9- place the wait call after the for-loop
+	wgWaitCall := makeWaitCall(wgIdent)
+
+	stmts = append(stmts, wgWaitCall)
+
+	return stmts
+}
+
 func MakeLoopConcurrent(astFile *ast.File, fset *token.FileSet, loopPos token.Pos, checker types.Checker) {
+	// Function to insert goroutines into for loops that are already known to be safe to refactor
 	// add import for sync and waitgroup
 	//-1- Is this the right place to do this? This requires the full astFile, which is not ideal
 	astutil.AddImport(fset, astFile, "sync")
@@ -78,6 +123,13 @@ func MakeLoopConcurrent(astFile *ast.File, fset *token.FileSet, loopPos token.Po
 		// first half makes sure it's a for statement, second makes sure it's the one in the correct position
 		if forLoop, ok := node.(*ast.ForStmt); ok && fset.Position(forLoop.Pos()).Offset == fset.Position(loopPos).Offset {
 			stmts := GetConcurrentLoop(forLoop, fset, checker)
+			cursor.InsertBefore(stmts[0])
+			cursor.Replace(stmts[1])
+			cursor.InsertAfter(stmts[2])
+			return false
+		}
+		if rangeLoop, ok := node.(*ast.RangeStmt); ok && fset.Position(rangeLoop.Pos()).Offset == fset.Position(loopPos).Offset {
+			stmts := GetConcurrentRangeLoop(rangeLoop, fset, checker)
 			cursor.InsertBefore(stmts[0])
 			cursor.Replace(stmts[1])
 			cursor.InsertAfter(stmts[2])
@@ -134,7 +186,7 @@ func makeGoStmt(forLoop *ast.ForStmt, checker types.Checker, block *ast.BlockStm
 		typ := checker.TypeOf(forLoop.Init.(*ast.AssignStmt).Rhs[l])
 		ident := forLoop.Init.(*ast.AssignStmt).Lhs[i].(*ast.Ident)
 		typeList = append(typeList, &ast.Field{
-			Type:  ast.NewIdent(typ.String()),
+			Type:  ast.NewIdent(cleanType(typ.String())),
 			Names: []*ast.Ident{ast.NewIdent(ident.Name)},
 		})
 	}
@@ -156,6 +208,57 @@ func makeGoStmt(forLoop *ast.ForStmt, checker types.Checker, block *ast.BlockStm
 			Args: forLoop.Init.(*ast.AssignStmt).Lhs,
 		},
 	}
+}
+
+func makeGoStmtForRange(loop *ast.RangeStmt, checker types.Checker, block *ast.BlockStmt) *ast.GoStmt {
+	// add the key and val to a list, if they exist
+	var typeList []*ast.Field
+	var args []ast.Expr
+
+	if loop.Key != nil {
+		typ := checker.TypeOf(loop.Key)
+		ident := loop.Key.(*ast.Ident)
+		typeList = append(typeList, &ast.Field{
+			Type:  ast.NewIdent(cleanType(typ.String())),
+			Names: []*ast.Ident{ast.NewIdent(ident.Name)},
+		})
+		args = append(args, loop.Key)
+	}
+	if loop.Value != nil {
+		typ := checker.TypeOf(loop.Value)
+		ident := loop.Value.(*ast.Ident)
+		typeList = append(typeList, &ast.Field{
+			Type:  ast.NewIdent(cleanType(typ.String())),
+			Names: []*ast.Ident{ast.NewIdent(ident.Name)},
+		})
+		args = append(args, loop.Value)
+	}
+
+	return &ast.GoStmt{
+		// create a goroutine
+		Call: &ast.CallExpr{
+			Fun: &ast.FuncLit{
+				Type: &ast.FuncType{
+					Params: &ast.FieldList{
+						// insert the list of types created above
+						List: typeList,
+					},
+				},
+				// insert the block created above
+				Body: block,
+			},
+			// add the loop variable as an argument
+			Args: args,
+		},
+	}
+}
+
+func cleanType(s string) string {
+	// for imported types, make sure we only include everything after the final /
+	if strings.Contains(s, "/") {
+		return s[strings.LastIndex(s, "/")+1:]
+	}
+	return s
 }
 
 func makeAddCall(wgIdent *ast.Ident) *ast.ExprStmt {
@@ -181,69 +284,4 @@ func makeWaitCall(wgIdent *ast.Ident) *ast.ExprStmt {
 			},
 		},
 	}
-}
-
-// FindSafeLoopsForRefactoring finds loops that can be refactored to be concurrent
-// It returns a list of Loop positions pointing to for and range loops
-func FindSafeLoopsForRefactoring(forLoops []*ast.ForStmt, f *token.FileSet, run *sarif.Run, fpath string) []token.Pos {
-	// A map to store Loop variable usage information
-	loopVarUsage := make(map[*ast.Ident]bool)
-
-	// The first predicate is that the Loop does not assign any values used within the Loop
-	// The Loop should be able to write to a variable it doesn't use - right? If the writing doesn't mind the context... though maybe it wants the last index it goes through?
-	// - but that's pretty poor design. Should be enough to acknowledge that this is a weakness, and that a better tool would take this into account
-	// Can we check if any of our variables are assigned to in a goroutine? because we'd want to avoid any of those. But then, is it different?
-	// So long as it's not a side effect of the Loop itself, the program might change, but it can still be done safely. This might
-	// be one of those "we can do this, but it changes behaviour" refactorings.
-
-	// Problem: what about assigning to an array or map, where we're assigning to an index corresponding to the main Loop variable?
-	// Solution: Check if the assign is to an index of an array or map, and if so, check if the index is the Loop variable
-
-	// Collect all for Loop variables
-	for _, loop := range forLoops {
-		FindAssignmentsInLoop(loop, loopVarUsage)
-	}
-
-	// list of loops that can be made concurrent
-	var concurrentLoops []token.Pos
-
-	// Now that we have the information, we can filter out the loops that can be made concurrent
-	for _, loop := range forLoops {
-		// The check we're doing is if the Loop does not write to a variable outside the Loop
-		// Thus, if that doesn't trigger, we assume it's safe to refactor
-		// add to list of loops that can be made concurrent
-		if LoopCanBeConcurrent(loop, loopVarUsage, f, run, fpath) {
-			concurrentLoops = append(concurrentLoops, loop.Pos())
-		}
-	}
-	return concurrentLoops
-}
-
-func LoopCanBeConcurrent(loop *ast.ForStmt, loopVarUsage map[*ast.Ident]bool, f *token.FileSet, run *sarif.Run, fpath string) bool {
-	canMakeConcurrent := true
-	ast.Inspect(loop, func(n ast.Node) bool {
-		if ident, ok := n.(*ast.Ident); ok {
-			if _, exists := loopVarUsage[ident]; exists {
-				if loopVarUsage[ident] {
-					// This is a good candidate for a unit test
-					//println("Cannot make Loop at line", f.Position(loop.Pos()).Line, "concurrent because it writes to '"+ident.Name+"' declared outside the Loop")
-					if run != nil {
-						run.AddResult("PERFACTOR_RULE_001").
-							WithLocation(sarif.NewLocationWithPhysicalLocation(sarif.NewPhysicalLocation().
-								WithArtifactLocation(sarif.NewArtifactLocation().
-									WithUri(fpath)).
-								WithRegion(sarif.NewRegion().
-									WithStartLine(f.Position(loop.Pos()).Line).
-									WithStartColumn(f.Position(loop.Pos()).Column)))).
-							WithMessage(sarif.NewMessage().WithText("Cannot make Loop concurrent because it writes to '" + ident.Name + "' declared outside the Loop"))
-					}
-					canMakeConcurrent = false
-					// no need to look into subtrees of this node
-					return false
-				}
-			}
-		}
-		return true
-	})
-	return canMakeConcurrent
 }

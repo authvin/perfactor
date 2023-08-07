@@ -53,14 +53,15 @@ func analyse(cmd *cobra.Command, args []string) {
 	// get the AST from the file in the project
 	fset := token.NewFileSet()
 	astFile := util.GetASTFromFile(projPath+fName, fset)
-	forloops := util.FindForLoopsInAST(astFile, fset, func(node ast.Node, fset *token.FileSet) bool {
+	loops := util.FindForLoopsInAST(astFile, fset, func(node ast.Node, fset *token.FileSet) bool {
 		pos := fset.Position(node.Pos())
 		if (startPos == -1 || pos.Line >= startPos) && (endPos == -1 || pos.Line <= endPos) {
 			return true
 		}
 		return false
 	})
-	util.FindSafeLoopsForRefactoring(forloops, fset, run, fpath)
+
+	util.FindSafeLoopsForRefactoring(loops, fset, run, fpath, nil)
 	report, err := sarif.New(sarif.Version210)
 	if err != nil {
 		println("Error creating SARIF report: " + err.Error())

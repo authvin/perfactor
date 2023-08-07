@@ -1,17 +1,15 @@
 // Code modified from example at https://github.com/disintegration/gift
 
-package main
+package imgproc
 
 import (
+	"github.com/disintegration/gift"
 	"image"
 	"image/color"
 	_ "image/jpeg"
 	"image/png"
 	"log"
 	"os"
-	"sync"
-
-	"github.com/disintegration/gift"
 )
 
 var filters = map[string]gift.Filter{
@@ -66,11 +64,10 @@ func main() {
 		path = os.Args[1]
 	}
 	src := loadImage(path)
-	runOrigin(src)
+	run(src)
 }
 
-// Original solution
-func runOrigin(src image.Image) {
+func run(src image.Image) {
 	for name, filter := range filters {
 		filename := "output/origin/dst_" + name + ".png"
 		g := gift.New(filter)
@@ -78,25 +75,6 @@ func runOrigin(src image.Image) {
 		g.Draw(dst, src)
 		saveImage(filename, dst)
 	}
-}
-
-// New solution
-func runTarget(src image.Image) {
-	var wg sync.WaitGroup
-
-	for name, filter := range filters {
-		g := gift.New(filter)
-		filename := "output/target/dst_" + name + ".png"
-		wg.Add(1)
-		// Any changing references outside the loop should be used before we go
-		go func(n string) {
-			defer wg.Done()
-			dst := image.NewNRGBA(g.Bounds(src.Bounds()))
-			g.Draw(dst, src)
-			saveImage(filename, dst)
-		}(name)
-	}
-	wg.Wait()
 }
 
 func loadImage(filename string) image.Image {
@@ -113,6 +91,7 @@ func loadImage(filename string) image.Image {
 }
 
 func saveImage(filename string, img image.Image) {
+	os.MkdirAll("output/origin", os.ModePerm)
 	f, err := os.Create(filename)
 	if err != nil {
 		log.Fatalf("os.Create failed: %v", err)

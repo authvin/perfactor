@@ -1,9 +1,7 @@
 package util
 
-import "go/ast"
-
 type LoopTimePair struct {
-	Loop *ast.ForStmt
+	Loop Loop
 	Time int64
 }
 
