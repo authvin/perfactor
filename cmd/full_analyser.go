@@ -28,26 +28,43 @@ var fullACmd = &cobra.Command{
 var analyzer string
 
 func init() {
-	fullACmd.Flags().StringVarP(&benchName, "benchname", "b", "RunProgram", "The name of the benchmark to run")
-	fullACmd.Flags().StringVarP(&name, "name", "n", "", "The id/name of the program to run")
-	fullACmd.Flags().StringVarP(&projectPath, "project", "p", "", "The path to the project")
-	fullACmd.Flags().StringVarP(&fileName, "filename", "f", "", "The path to the input file")
-	fullACmd.Flags().StringVarP(&output, "output", "o", "_data", "The path to the output folder")
-	fullACmd.Flags().StringVarP(&testName, "testname", "t", "NONE", "The name of the test to run")
-	fullACmd.Flags().StringVarP(&flags, "flags", "", "", "Any flags to pass to the program")
+	fullACmd.Flags().StringP("benchname", "b", "RunProgram", "The name of the benchmark to run")
+	fullACmd.Flags().StringP("name", "n", "", "The id/name of the program to run")
+	fullACmd.Flags().StringP("project", "p", "", "The path to the project")
+	fullACmd.Flags().StringP("filename", "f", "", "The path to the input file")
+	fullACmd.Flags().StringP("output", "o", "_data", "The path to the output folder")
+	fullACmd.Flags().StringP("testname", "t", "NONE", "The name of the test to run")
+	fullACmd.Flags().StringP("flags", "", "", "Any flags to pass to the program")
 	fullACmd.Flags().StringVarP(&analyzer, "analyzer", "a", "loop_concurrent", "The analyzer to run")
+	fullACmd.Flags().StringP("accept", "e", "", "Accept an identifier in a given loop")
+	fullACmd.Flags().IntP("count", "c", 3, "The number of times to run the benchmark")
+	fullACmd.Flags().Float32P("threshold", "d", 0.1, "The threshold for the percentage increase in runtime")
 	rootCmd.AddCommand(fullACmd)
 }
 
 func fullA(cmd *cobra.Command, args []string) {
 	//Run program, giving an input path, output path, name of benchmark, name of test, ID of the run, and any flags
 	// (that's how we get here)
-	if len(projectPath) == 0 {
-		println("Please provide an input path")
+	projectPath, err := cmd.Flags().GetString("project")
+	if err != nil {
+		println("Error getting project path: " + err.Error())
 		return
 	}
+	if len(projectPath) == 0 {
+		println("Please provide a project path")
+		return
+	}
+	// make sure the project path ends with a slash
+	if !strings.HasSuffix(projectPath, p) {
+		projectPath += p
+	}
+
 	// Generate a UUID if no name is provided
-	// mktemp
+	name, err := cmd.Flags().GetString("name")
+	if err != nil {
+		println("Error getting name: " + err.Error())
+		return
+	}
 	if len(name) == 0 {
 		u := uuid.New()
 		name = u.String()
@@ -62,11 +79,11 @@ func fullA(cmd *cobra.Command, args []string) {
 		fmt.Printf("Unknown analyzer: %s\n", analyzer)
 		return
 	}
-
-	RunAnalyser(a, projectPath, fileName, name, benchName, testName, flags)
+	flags, benchName, testName, fileName, accept, output, count, threshold := getFlags(cmd)
+	RunAnalyser(a, projectPath, fileName, name, benchName, testName, flags, count, output, accept, threshold)
 }
 
-func RunAnalyser(a *analysis.Analyzer, projectPath, fileName, name, benchName, testName, flags string) {
+func RunAnalyser(a *analysis.Analyzer, projectPath, fileName, name, benchName, testName, flags string, count int, output string, accept string, threshold float32) {
 	// check if the project path ends with a slash
 	if projectPath[len(projectPath)-1] != os.PathSeparator {
 		// if not, add one
@@ -124,7 +141,7 @@ func RunAnalyser(a *analysis.Analyzer, projectPath, fileName, name, benchName, t
 	}
 	fmt.Printf("Running initial benchmark: %s\n", benchName)
 	//Program runs the benchmark to generate profiling data
-	result := util.RunCode(flags, benchName, "NONE", name, tmpPath+fileName, tmpPath, true)
+	result := util.RunCode(flags, benchName, "NONE", name, tmpPath+fileName, tmpPath, true, count)
 	if result == "FAILED" {
 		println("Error running benchmark")
 		return
@@ -211,7 +228,7 @@ func RunAnalyser(a *analysis.Analyzer, projectPath, fileName, name, benchName, t
 			improved: false,
 		}
 
-		if runTestAndBenchmark(tmpPath) {
+		if runTestAndBenchmark(tmpPath, flags, testName, benchName, name, fileName, count) {
 			fmt.Printf("Fix passed: %s\n", diag.Message)
 			res.passed = true
 		} else {
@@ -298,7 +315,7 @@ func RunAnalyser(a *analysis.Analyzer, projectPath, fileName, name, benchName, t
 		improved: false,
 	}
 
-	if runTestAndBenchmark(tmpPath) {
+	if runTestAndBenchmark(tmpPath, flags, testName, benchName, name, fileName, count) {
 		res.passed = true
 	} else {
 		return
@@ -320,14 +337,14 @@ func RunAnalyser(a *analysis.Analyzer, projectPath, fileName, name, benchName, t
 	}
 }
 
-func runTestAndBenchmark(tmpPath string) bool {
-	testResult := util.RunCode(flags, "NONE", testName, name, tmpPath+fileName, tmpPath, false)
+func runTestAndBenchmark(tmpPath, flags, testName, benchName, name, fileName string, count int) bool {
+	testResult := util.RunCode(flags, "NONE", testName, name, tmpPath+fileName, tmpPath, false, count)
 	if strings.Contains(testResult, "FAIL") {
 		fmt.Println("Test failed")
 		return false
 	}
 
-	benchmarkResult := util.RunCode(flags, benchName, "NONE", name, tmpPath+fileName, tmpPath, true)
+	benchmarkResult := util.RunCode(flags, benchName, "NONE", name, tmpPath+fileName, tmpPath, true, count)
 	if strings.Contains(benchmarkResult, "FAIL") {
 		fmt.Println("Benchmark failed")
 		return false

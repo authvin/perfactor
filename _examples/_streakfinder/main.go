@@ -1,6 +1,7 @@
 package main
 
 import (
+	"_streakfinder/local"
 	"fmt"
 	"math/rand"
 	"os"
@@ -40,6 +41,8 @@ func main() {
 		fmt.Println(err.Error())
 	}
 	var result = runProgram(length, max, seed, seedsToCheck)
+
+	println(local.Example(1))
 
 	for i := int64(0); i < seedsToCheck; i++ {
 		fmt.Printf("%d: %d - %v\n", seed+i, len(result[i]), result[i])

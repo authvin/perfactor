@@ -120,7 +120,7 @@ func (g Graph) FindNodesByLine(line int, end int) []*Node {
 		}
 	}
 	if len(nodes) == 0 {
-		println("No nodes found for line", line)
+		println("Loop on line", line, "was not found in the profile data")
 	}
 	return nodes
 }

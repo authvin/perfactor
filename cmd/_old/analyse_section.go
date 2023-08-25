@@ -1,4 +1,4 @@
-package cmd
+package _old
 
 import (
 	"bytes"
@@ -32,7 +32,7 @@ func init() {
 	analyseCmd.Flags().StringVarP(&fName, "filename", "f", "", "The path to the input file")
 	analyseCmd.Flags().IntVarP(&startPos, "startline", "s", -1, "The starting position to look through")
 	analyseCmd.Flags().IntVarP(&endPos, "endline", "e", -1, "The ending position to look through")
-	rootCmd.AddCommand(analyseCmd)
+	//cmd.rootCmd.AddCommand(analyseCmd)
 }
 
 func analyse(cmd *cobra.Command, args []string) {

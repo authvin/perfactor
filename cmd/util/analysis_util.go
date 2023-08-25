@@ -2,23 +2,27 @@ package util
 
 import (
 	"errors"
+	"fmt"
 	"github.com/owenrumney/go-sarif/sarif"
 	"go/ast"
 	"go/token"
+	"go/types"
 	"reflect"
 )
 
 type Loop struct {
-	Pos   token.Pos
-	End   token.Pos
-	Body  *ast.BlockStmt
-	For   *ast.ForStmt
-	Range *ast.RangeStmt
+	For     *ast.ForStmt
+	Range   *ast.RangeStmt
+	Body    *ast.BlockStmt
+	Pos     token.Pos
+	End     token.Pos
+	Line    int
+	EndLine int
 }
 
 // FindSafeLoopsForRefactoring finds loops that can be refactored to be concurrent
 // It returns a list of Loop positions pointing to for and range loops
-func FindSafeLoopsForRefactoring(forLoops []Loop, f *token.FileSet, run *sarif.Run, fpath string, acceptMap map[string]int) []token.Pos {
+func FindSafeLoopsForRefactoring(forLoops []Loop, f *token.FileSet, run *sarif.Run, fpath string, acceptMap map[string]int, info *types.Info) []token.Pos {
 	// The first predicate is that the Loop does not assign any values used within the Loop.
 	// The Loop should be able to write to a variable it doesn't use - right? If the writing doesn't mind the context... though maybe it wants the last index it goes through?
 	// - but that's pretty poor design. Should be enough to acknowledge that this is a weakness, and that a better tool would take this into account
@@ -41,14 +45,14 @@ func FindSafeLoopsForRefactoring(forLoops []Loop, f *token.FileSet, run *sarif.R
 		// The check we're doing is if the Loop does not write to a variable outside the Loop
 		// Thus, if that doesn't trigger, we assume it's safe to refactor
 		// add to list of loops that can be made concurrent
-		if LoopCanBeConcurrent(loop, f, run, fpath, acceptMap) {
+		if LoopCanBeConcurrent(loop, f, run, fpath, acceptMap, info) {
 			concurrentLoops = append(concurrentLoops, loop.Pos)
 		}
 	}
 	return concurrentLoops
 }
 
-func LoopCanBeConcurrent(loop Loop, fileSet *token.FileSet, run *sarif.Run, fpath string, acceptMap map[string]int) bool {
+func LoopCanBeConcurrent(loop Loop, fileSet *token.FileSet, run *sarif.Run, fpath string, acceptMap map[string]int, info *types.Info) bool {
 	// Conditions:
 	// - Loop variable is unique for every iteration
 	// 		- Make sure by checking that it is present in Init, Cond and Post
@@ -227,6 +231,10 @@ func LoopCanBeConcurrent(loop Loop, fileSet *token.FileSet, run *sarif.Run, fpat
 		return false
 	})
 
+	if !canMakeConcurrent {
+		return false
+	}
+
 	// The above inspect looks at control flow statements
 	// The below inspect looks at other nodes; specifically assignments and function/method calls
 
@@ -245,6 +253,29 @@ func LoopCanBeConcurrent(loop Loop, fileSet *token.FileSet, run *sarif.Run, fpat
 				case *ast.IndexExpr:
 					// check if the indexExpr contains the Loop variable
 					indexExpr := lhs.(*ast.IndexExpr)
+					// if it is an index expression, it cannot be a map type
+					base := getBaseOfIndex(indexExpr)
+					if base == nil {
+						canMakeConcurrent = false
+						println("Cannot make Loop at line", fileSet.Position(loop.Pos).Line, "concurrent; base of index expression is not an identifier")
+						return false
+					}
+					typeof := info.TypeOf(base)
+					if typeof == nil {
+						canMakeConcurrent = false
+						println("Cannot make Loop at line", fileSet.Position(loop.Pos).Line, "concurrent; cannot determine type of indexed variable", base.Name)
+						return false
+					}
+					typeof = getUnderlying(typeof)
+					// only allowed if it's a slice or array underneath
+					_, slice := typeof.(*types.Slice)
+					_, arr := typeof.(*types.Array)
+					if !slice && !arr {
+						canMakeConcurrent = false
+						fmt.Printf("Cannot make Loop at line %d, concurrent; only slices and arrays are allowed; typeof: %s\n", fileSet.Position(loop.Pos).Line, typeof.String())
+						return false
+					}
+
 					if indexContainsLoopVar(indexExpr, loopVars) {
 						// the indexExpr contains the Loop variable; this is allowed
 						continue
@@ -252,6 +283,7 @@ func LoopCanBeConcurrent(loop Loop, fileSet *token.FileSet, run *sarif.Run, fpat
 					// mark as invalid
 					canMakeConcurrent = false
 					println("Cannot make Loop at line", fileSet.Position(loop.Pos).Line, "concurrent because it writes to an array using a non-Loop variable as the index")
+					return false
 				case *ast.Ident:
 					ident := lhs.(*ast.Ident)
 					// check if the identifier is the Loop variable
@@ -299,6 +331,8 @@ func LoopCanBeConcurrent(loop Loop, fileSet *token.FileSet, run *sarif.Run, fpat
 					}
 				}
 			}
+			// it's a function call, not a method call
+			//
 		}
 
 		//if ident, ok := n.(*ast.Ident); ok {
@@ -319,6 +353,13 @@ func LoopCanBeConcurrent(loop Loop, fileSet *token.FileSet, run *sarif.Run, fpat
 	})
 
 	return canMakeConcurrent
+}
+
+func getUnderlying(typeof types.Type) types.Type {
+	if typeof.Underlying() != typeof {
+		return getUnderlying(typeof.Underlying())
+	}
+	return typeof
 }
 
 func findRangeLoopVars(loop *ast.RangeStmt) []*ast.Ident {
@@ -554,6 +595,16 @@ func traverseExpr(expr ast.Expr, identMap map[*ast.Ident]bool) bool {
 		println("Unhandled expression: ", reflect.TypeOf(expr).String())
 		return false
 	}
+}
+
+func getBaseOfIndex(index ast.Expr) *ast.Ident {
+	if x, ok := index.(*ast.Ident); ok {
+		return x
+	}
+	if x, ok := index.(*ast.IndexExpr); ok {
+		return getBaseOfIndex(x.X)
+	}
+	return nil
 }
 
 func addRunResult(run *sarif.Run, ruleID, messageText, filePath string, pos token.Pos, f *token.FileSet) {

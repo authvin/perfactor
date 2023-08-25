@@ -1,4 +1,4 @@
-package cmd
+package _old
 
 import (
 	"fmt"
@@ -210,7 +210,7 @@ func (e Edges) Swap(i int, j int) {
 }
 
 func init() {
-	rootCmd.AddCommand(traverseCmd)
+	//cmd.rootCmd.AddCommand(traverseCmd)
 }
 
 func formatAsSeconds(i int64) string {

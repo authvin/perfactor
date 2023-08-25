@@ -25,7 +25,7 @@ import (
 //8 empty the for-loop's list of statements and add the wg.Add(1) statement and goroutine statement to it
 //9 add a wait-call after the for-loop
 
-func GetConcurrentLoop(n *ast.ForStmt, fset *token.FileSet, checker types.Checker) []ast.Stmt {
+func GetConcurrentLoop(n *ast.ForStmt, fset *token.FileSet, info *types.Info) []ast.Stmt {
 	stmts := make([]ast.Stmt, 0)
 	// Instead of checking if "wg" exists, we add a four-digit number to the end of it. Not ideal, but mostly functional. Known issue.
 	source := rand.NewSource(time.Now().UnixNano())
@@ -40,7 +40,7 @@ func GetConcurrentLoop(n *ast.ForStmt, fset *token.FileSet, checker types.Checke
 	block.List = append(block.List, n.Body.List...)
 
 	//-6- set up the go stmt with fields with the types from the rhs of loop var assign statements
-	goStmt := makeGoStmt(n, checker, block)
+	goStmt := makeGoStmt(n, info, block)
 
 	//-7- Adding one to the wait group per goroutine
 	wgAddCall := makeAddCall(wgIdent)
@@ -68,7 +68,7 @@ func GetConcurrentLoop(n *ast.ForStmt, fset *token.FileSet, checker types.Checke
 	return stmts
 }
 
-func GetConcurrentRangeLoop(n *ast.RangeStmt, fset *token.FileSet, checker types.Checker) []ast.Stmt {
+func GetConcurrentRangeLoop(n *ast.RangeStmt, fset *token.FileSet, info *types.Info) []ast.Stmt {
 	stmts := make([]ast.Stmt, 0)
 	// Instead of checking if "wg" exists, we add a four-digit number to the end of it. Not ideal, but mostly functional. Known issue.
 	source := rand.NewSource(time.Now().UnixNano())
@@ -83,7 +83,7 @@ func GetConcurrentRangeLoop(n *ast.RangeStmt, fset *token.FileSet, checker types
 	block.List = append(block.List, n.Body.List...)
 
 	//-6- set up the go stmt with fields with the types from the rhs of loop var assign statements
-	goStmt := makeGoStmtForRange(n, checker, block)
+	goStmt := makeGoStmtForRange(n, info, block)
 
 	//-7- Adding one to the wait group per goroutine
 	wgAddCall := makeAddCall(wgIdent)
@@ -113,7 +113,7 @@ func GetConcurrentRangeLoop(n *ast.RangeStmt, fset *token.FileSet, checker types
 	return stmts
 }
 
-func MakeLoopConcurrent(astFile *ast.File, fset *token.FileSet, loopPos token.Pos, checker types.Checker) {
+func MakeLoopConcurrent(astFile *ast.File, fset *token.FileSet, line int, info *types.Info) {
 	// Function to insert goroutines into for loops that are already known to be safe to refactor
 	// add import for sync and waitgroup
 	//-1- Is this the right place to do this? This requires the full astFile, which is not ideal
@@ -121,15 +121,15 @@ func MakeLoopConcurrent(astFile *ast.File, fset *token.FileSet, loopPos token.Po
 	astutil.Apply(astFile, func(cursor *astutil.Cursor) bool {
 		node := cursor.Node()
 		// first half makes sure it's a for statement, second makes sure it's the one in the correct position
-		if forLoop, ok := node.(*ast.ForStmt); ok && fset.Position(forLoop.Pos()).Offset == fset.Position(loopPos).Offset {
-			stmts := GetConcurrentLoop(forLoop, fset, checker)
+		if forLoop, ok := node.(*ast.ForStmt); ok && fset.Position(forLoop.Pos()).Line == line {
+			stmts := GetConcurrentLoop(forLoop, fset, info)
 			cursor.InsertBefore(stmts[0])
 			cursor.Replace(stmts[1])
 			cursor.InsertAfter(stmts[2])
 			return false
 		}
-		if rangeLoop, ok := node.(*ast.RangeStmt); ok && fset.Position(rangeLoop.Pos()).Offset == fset.Position(loopPos).Offset {
-			stmts := GetConcurrentRangeLoop(rangeLoop, fset, checker)
+		if rangeLoop, ok := node.(*ast.RangeStmt); ok && fset.Position(rangeLoop.Pos()).Line == line {
+			stmts := GetConcurrentRangeLoop(rangeLoop, fset, info)
 			cursor.InsertBefore(stmts[0])
 			cursor.Replace(stmts[1])
 			cursor.InsertAfter(stmts[2])
@@ -174,7 +174,7 @@ func makeGoroutineBlock(wgIdent *ast.Ident) *ast.BlockStmt {
 	}
 }
 
-func makeGoStmt(forLoop *ast.ForStmt, checker types.Checker, block *ast.BlockStmt) *ast.GoStmt {
+func makeGoStmt(forLoop *ast.ForStmt, info *types.Info, block *ast.BlockStmt) *ast.GoStmt {
 	// get the type of the variable being assigned to in the init statement
 	l := len(forLoop.Init.(*ast.AssignStmt).Rhs) - 1
 
@@ -183,8 +183,12 @@ func makeGoStmt(forLoop *ast.ForStmt, checker types.Checker, block *ast.BlockStm
 	// for each ident in the lhs of the for Loop init
 
 	for i := 0; i < len(forLoop.Init.(*ast.AssignStmt).Lhs); i++ {
-		typ := checker.TypeOf(forLoop.Init.(*ast.AssignStmt).Rhs[l])
+
+		typ := info.TypeOf(forLoop.Init.(*ast.AssignStmt).Rhs[l])
 		ident := forLoop.Init.(*ast.AssignStmt).Lhs[i].(*ast.Ident)
+		if ident.Name == "_" {
+			println("found _")
+		}
 		typeList = append(typeList, &ast.Field{
 			Type:  ast.NewIdent(cleanType(typ.String())),
 			Names: []*ast.Ident{ast.NewIdent(ident.Name)},
@@ -210,28 +214,32 @@ func makeGoStmt(forLoop *ast.ForStmt, checker types.Checker, block *ast.BlockStm
 	}
 }
 
-func makeGoStmtForRange(loop *ast.RangeStmt, checker types.Checker, block *ast.BlockStmt) *ast.GoStmt {
+func makeGoStmtForRange(loop *ast.RangeStmt, info *types.Info, block *ast.BlockStmt) *ast.GoStmt {
 	// add the key and val to a list, if they exist
 	var typeList []*ast.Field
 	var args []ast.Expr
 
 	if loop.Key != nil {
-		typ := checker.TypeOf(loop.Key)
+		typ := info.TypeOf(loop.Key)
 		ident := loop.Key.(*ast.Ident)
-		typeList = append(typeList, &ast.Field{
-			Type:  ast.NewIdent(cleanType(typ.String())),
-			Names: []*ast.Ident{ast.NewIdent(ident.Name)},
-		})
-		args = append(args, loop.Key)
+		if ident.Name != "_" {
+			typeList = append(typeList, &ast.Field{
+				Type:  ast.NewIdent(cleanType(typ.String())),
+				Names: []*ast.Ident{ast.NewIdent(ident.Name)},
+			})
+			args = append(args, loop.Key)
+		}
 	}
 	if loop.Value != nil {
-		typ := checker.TypeOf(loop.Value)
+		typ := info.TypeOf(loop.Value)
 		ident := loop.Value.(*ast.Ident)
-		typeList = append(typeList, &ast.Field{
-			Type:  ast.NewIdent(cleanType(typ.String())),
-			Names: []*ast.Ident{ast.NewIdent(ident.Name)},
-		})
-		args = append(args, loop.Value)
+		if ident.Name != "_" {
+			typeList = append(typeList, &ast.Field{
+				Type:  ast.NewIdent(cleanType(typ.String())),
+				Names: []*ast.Ident{ast.NewIdent(ident.Name)},
+			})
+			args = append(args, loop.Value)
+		}
 	}
 
 	return &ast.GoStmt{

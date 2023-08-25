@@ -7,6 +7,7 @@ import (
 	"os"
 	"perfactor/graph"
 	"sort"
+	"time"
 )
 
 func GetProfileDataFromFile(filePath string) *profile.Profile {
@@ -27,17 +28,20 @@ func GetProfileDataFromFile(filePath string) *profile.Profile {
 	return prof
 }
 
-func FilterLoopsUsingProfileData(safeLoops []token.Pos, sorted LoopTimeArray, fset *token.FileSet) LoopTimeArray {
-	output := make(LoopTimeArray, 0)
+func FilterLoopsUsingProfileData(safeLoops []token.Pos, sorted LoopInfoArray, threshold int64) LoopInfoArray {
+	output := make(LoopInfoArray, 0)
 	for _, lt := range sorted {
-		loop, time := lt.Loop, lt.Time
+		loop, t := lt.Loop, lt.Time
 		// check if the Loop is in the list of safe loops
 		if !contains(safeLoops, loop.Pos) {
 			continue
 		}
-		if time == 0 {
-			// if the Time is 0, then the Loop is not worth making concurrent
+		if t < threshold {
+			// if the Time is less than the threshold, then the Loop is not worth making concurrent
+			fmt.Printf("Loop at line %d has a total Time of %s, which is less than the threshold of %s\n", loop.Line, time.Duration(t), time.Duration(threshold))
 			continue
+		} else {
+			fmt.Printf("Loop at line %d has a total Time of %s, which is greater than the threshold of %s\n", loop.Line, time.Duration(t), time.Duration(threshold))
 		}
 		//println("Loop at line ", fset.Position(loop.Pos()).Line, " has a total Time of ", time)
 		output = append(output, lt)
@@ -54,12 +58,13 @@ func contains(loops []token.Pos, pos token.Pos) bool {
 	return false
 }
 
-func SortLoopsUsingProfileData(prof *profile.Profile, forLoops []Loop, fset *token.FileSet) LoopTimeArray {
+func SortLoopsUsingProfileData(prof *profile.Profile, forLoops []Loop, fset *token.FileSet) LoopInfoArray {
+	totalCumulativeTime := make(LoopInfoArray, len(forLoops))
+
 	// find the gr nodes corresponding to the for loops
 	// look through the profile data and find the for loops that are the most expensive
 	gr := graph.GetGraphFromProfile(prof)
 
-	totalCumulativeTime := make(LoopTimeArray, len(forLoops))
 	for i, loop := range forLoops {
 		totalCumulativeTime[i].Loop = loop
 		// get the line numbers of the Loop
@@ -76,6 +81,21 @@ func SortLoopsUsingProfileData(prof *profile.Profile, forLoops []Loop, fset *tok
 		}
 	}
 	sort.Sort(totalCumulativeTime)
+
+	// now we have the total cumulative Time for each Loop, sorted from least to greatest. Let's return it
+	return totalCumulativeTime
+}
+
+func GetLoopInfoArray(forLoops []Loop, fset *token.FileSet) LoopInfoArray {
+	totalCumulativeTime := make(LoopInfoArray, len(forLoops))
+
+	// find the gr nodes corresponding to the for loops
+	// look through the profile data and find the for loops that are the most expensive
+
+	for i, loop := range forLoops {
+		totalCumulativeTime[i].Loop = loop
+		totalCumulativeTime[i].Time = 1
+	}
 
 	// now we have the total cumulative Time for each Loop, sorted from least to greatest. Let's return it
 	return totalCumulativeTime

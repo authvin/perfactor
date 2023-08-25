@@ -1,8 +1,9 @@
-package cmd
+package _old
 
 import (
 	"fmt"
 	"github.com/spf13/cobra"
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"go/types"
@@ -23,7 +24,7 @@ var findloopsCmd = &cobra.Command{
 func init() {
 	findloopsCmd.Flags().StringVarP(&Source, "source", "s", "", "source file to read from")
 	findloopsCmd.Flags().StringVarP(&ProfileSource, "profile", "p", "", "file to read profile data from")
-	rootCmd.AddCommand(findloopsCmd)
+	//cmd.rootCmd.AddCommand(findloopsCmd)
 }
 
 func findloops(cmd *cobra.Command, args []string) {
@@ -57,14 +58,14 @@ func findloops(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	info := util.GetTypeCheckerInfo(astFile, fset)
+	info := util.GetTypeCheckerInfoFromFile("pkg", []*ast.File{astFile}, fset)
 
 	checker := types.Checker{
 		Info: info,
 	}
 
 	for _, loop := range safeLoops {
-		util.MakeLoopConcurrent(astFile, fset, loop, checker)
+		util.MakeLoopConcurrent(astFile, fset, fset.Position(loop).Line, checker)
 	}
 	util.WriteModifiedAST(fset, astFile, "_tmp/temp.go")
 }

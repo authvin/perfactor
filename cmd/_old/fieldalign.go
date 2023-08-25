@@ -1,8 +1,7 @@
-package cmd
+package _old
 
 import (
 	"github.com/spf13/cobra"
-	"golang.org/x/tools/go/analysis/passes/fieldalignment"
 )
 
 var fieldCmd = &cobra.Command{
@@ -13,9 +12,9 @@ var fieldCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.AddCommand(fieldCmd)
+	//cmd.rootCmd.AddCommand(fieldCmd)
 }
 
 func f(cmd *cobra.Command, args []string) {
-	RunAnalyser(fieldalignment.Analyzer, "_examples/_streakfinder", "main.go", "", "RunProgram", "", "")
+	//cmd.RunAnalyser(fieldalignment.Analyzer, "_examples/_streakfinder", "main.go", "", "RunProgram", "", "")
 }

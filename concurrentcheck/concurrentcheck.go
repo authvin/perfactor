@@ -31,14 +31,11 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	// each file is an AST -> inspect each AST. Or do we use a visitor?
 	sarifRun := sarif.NewRun("name_placeholder", "uri_placeholder")
 	for _, file := range pass.Files {
-		info := util.GetTypeCheckerInfo(file, pass.Fset)
-		checker := types.Checker{
-			Info: info,
-		}
+		info := util.GetTypeCheckerInfoFromFile("pkg", []*ast.File{file}, pass.Fset)
 		// First, we need to be in a for loop
 		ast.Walk(&ConcurrentLoopVisitor{
 			// need to add a checker here!
-			checker:      checker,
+			info:         *info,
 			f:            pass.Fset,
 			run:          *sarifRun,
 			fileLocation: sarif.NewPhysicalLocation().WithArtifactLocation(sarif.NewArtifactLocation().WithUri(pass.Fset.Position(file.Pos()).Filename)),
@@ -55,7 +52,7 @@ type ConcurrentLoopVisitor struct {
 	run          sarif.Run
 	fileLocation *sarif.PhysicalLocation
 	pass         *analysis.Pass
-	checker      types.Checker
+	info         types.Info
 }
 
 func (w ConcurrentLoopVisitor) Visit(n ast.Node) ast.Visitor {
@@ -63,7 +60,7 @@ func (w ConcurrentLoopVisitor) Visit(n ast.Node) ast.Visitor {
 		assignedTo := findAssignmentsInLoop(forStmt)
 		if w.canBeConcurrent(forStmt, assignedTo) {
 			// Get the statements that will replace the for loop
-			newStmts := util.GetConcurrentLoop(forStmt, w.f, w.checker)
+			newStmts := util.GetConcurrentLoop(forStmt, w.f, &w.info)
 			var buf bytes.Buffer
 			for _, stmt := range newStmts {
 				// write each statement to the buffer
