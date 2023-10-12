@@ -6,7 +6,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"go/types"
+	"os"
 	"perfactor/cmd/util"
 )
 
@@ -47,25 +47,21 @@ func findloops(cmd *cobra.Command, args []string) {
 	// This will be done by looking at the variables that are assigned in the loop and seeing if they are declared outside the loop
 	// If they are, then the loop cannot be made concurrent
 	// If they are not, then the loop can be made concurrent
-	safeLoops := util.FindSafeLoopsForRefactoring(loops, fset, nil, Source, nil)
+	safeLoops := util.FindSafeLoopsForRefactoring(loops, fset, nil, Source, nil, nil, os.Stdout)
 
 	// filter safeLoops using the data from the profiling
 	if dataFromProfileSorting != nil {
-		loops := util.FilterLoopsUsingProfileData(safeLoops, dataFromProfileSorting, fset)
-		safeLoops = make([]token.Pos, len(loops))
+		loops := util.FilterLoopsUsingProfileData(safeLoops, dataFromProfileSorting, 0)
+		safeLoops = make([]util.Loop, len(loops))
 		for i, loop := range loops {
-			safeLoops[i] = loop.Loop.Pos
+			safeLoops[i] = loop.Loop
 		}
 	}
 
 	info := util.GetTypeCheckerInfoFromFile("pkg", []*ast.File{astFile}, fset)
 
-	checker := types.Checker{
-		Info: info,
-	}
-
 	for _, loop := range safeLoops {
-		util.MakeLoopConcurrent(astFile, fset, fset.Position(loop).Line, checker)
+		util.MakeLoopConcurrent(astFile, fset, loop.Line, info)
 	}
-	util.WriteModifiedAST(fset, astFile, "_tmp/temp.go")
+	util.WriteModifiedAST(fset, astFile, "_tmp/", "temp.go")
 }

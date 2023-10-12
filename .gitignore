@@ -22,3 +22,5 @@ go.work
 /perfactor
 /_tmp/*
 /_out/*
+/_data/
+/_tmp/

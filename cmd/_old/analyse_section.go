@@ -61,7 +61,7 @@ func analyse(cmd *cobra.Command, args []string) {
 		return false
 	})
 
-	util.FindSafeLoopsForRefactoring(loops, fset, run, fpath, nil)
+	util.FindSafeLoopsForRefactoring(loops, fset, run, fpath, nil, nil, os.Stdout)
 	report, err := sarif.New(sarif.Version210)
 	if err != nil {
 		println("Error creating SARIF report: " + err.Error())

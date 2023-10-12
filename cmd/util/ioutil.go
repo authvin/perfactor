@@ -6,7 +6,10 @@ import (
 	"go/ast"
 	"go/printer"
 	"go/token"
+	"io/fs"
 	"os"
+	"path/filepath"
+	"strings"
 )
 
 func CleanOrCreateTempFolder(path string) {
@@ -34,12 +37,35 @@ func CleanOrCreateTempFolder(path string) {
 	}
 }
 
-func WriteModifiedAST(fset *token.FileSet, astFile *ast.File, filePath string) {
+func WriteModifiedAST(fset *token.FileSet, astFile *ast.File, filePath string, fileName string) {
 	// write the modified astFile to a new file
+	// make sure output folder exists
+
+	// ensure filePath ends in /
+	if !strings.HasSuffix(filePath, p) {
+		filePath += p
+	}
+	if strings.Contains(fileName, p) {
+		// if the filename contains a path, get the last part of it
+		filePath += fileName[:strings.LastIndex(fileName, p)]
+		fileName = fileName[strings.LastIndex(fileName, p)+1:]
+		if !strings.HasSuffix(filePath, p) {
+			filePath += p
+		}
+	}
+	err := os.MkdirAll(filePath, os.ModePerm)
+	if err != nil {
+		fmt.Println("Failed to create folder for modified AST: " + err.Error())
+		return
+	}
 	// os.Create will truncate a file if it already exists
-	file, err := os.Create(filePath)
+	file, err := os.Create(filePath + fileName)
 	if err != nil {
 		fmt.Println("Failed to create file for modified AST: " + err.Error())
+		return
+	}
+	if fset == nil || astFile == nil {
+		fmt.Println("Failed to write modified AST: fset or astFile is nil")
 		return
 	}
 	err = printer.Fprint(file, fset, astFile)
@@ -47,4 +73,32 @@ func WriteModifiedAST(fset *token.FileSet, astFile *ast.File, filePath string) {
 		fmt.Println("Failed to print modified AST: " + err.Error())
 		return
 	}
+}
+
+// GetAllGoFilesInDir returns a list of all .go files in the given directory
+func GetAllGoFilesInDir(dirPath string) ([]string, error) {
+	return getAllGoFilesInDir(dirPath, "")
+}
+
+func getAllGoFilesInDir(dirPath, subDirPath string) ([]string, error) {
+	var files []string
+	err := filepath.WalkDir(dirPath, func(path string, d fs.DirEntry, err error) error {
+		if strings.HasSuffix(path, ".go") {
+			files = append(files, subDirPath+path)
+		}
+		if d.IsDir() && path != dirPath {
+			if strings.HasPrefix(path, ".") || strings.HasPrefix(path, "_") {
+				// skip hidden directories
+				return nil
+			}
+			// recurse into the directory
+			subDirFiles, err := getAllGoFilesInDir(path, subDirPath+d.Name()+p)
+			if err != nil {
+				return err
+			}
+			files = append(files, subDirFiles...)
+		}
+		return nil
+	})
+	return files, err
 }

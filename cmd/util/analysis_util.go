@@ -7,6 +7,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"io"
 	"reflect"
 )
 
@@ -22,7 +23,7 @@ type Loop struct {
 
 // FindSafeLoopsForRefactoring finds loops that can be refactored to be concurrent
 // It returns a list of Loop positions pointing to for and range loops
-func FindSafeLoopsForRefactoring(forLoops []Loop, f *token.FileSet, run *sarif.Run, fpath string, acceptMap map[string]int, info *types.Info) []token.Pos {
+func FindSafeLoopsForRefactoring(forLoops []Loop, f *token.FileSet, run *sarif.Run, fpath string, acceptMap map[string]int, info *types.Info, out io.Writer) []Loop {
 	// The first predicate is that the Loop does not assign any values used within the Loop.
 	// The Loop should be able to write to a variable it doesn't use - right? If the writing doesn't mind the context... though maybe it wants the last index it goes through?
 	// - but that's pretty poor design. Should be enough to acknowledge that this is a weakness, and that a better tool would take this into account
@@ -33,26 +34,28 @@ func FindSafeLoopsForRefactoring(forLoops []Loop, f *token.FileSet, run *sarif.R
 	if acceptMap == nil {
 		acceptMap = make(map[string]int)
 	}
-
+	if out == nil {
+		println("out is nil")
+	}
 	// Problem: what about assigning to an array or map, where we're assigning to an index corresponding to the main Loop variable?
 	// Solution: Check if the assign is to an index of an array or map, and if so, check if the index is the Loop variable
 
 	// list of loops that can be made concurrent
-	var concurrentLoops []token.Pos
+	var concurrentLoops []Loop
 
 	// Now that we have the information, we can filter out the loops that can be made concurrent
 	for _, loop := range forLoops {
 		// The check we're doing is if the Loop does not write to a variable outside the Loop
 		// Thus, if that doesn't trigger, we assume it's safe to refactor
 		// add to list of loops that can be made concurrent
-		if LoopCanBeConcurrent(loop, f, run, fpath, acceptMap, info) {
-			concurrentLoops = append(concurrentLoops, loop.Pos)
+		if LoopCanBeConcurrent(loop, f, run, nil, acceptMap, info, out) {
+			concurrentLoops = append(concurrentLoops, loop)
 		}
 	}
 	return concurrentLoops
 }
 
-func LoopCanBeConcurrent(loop Loop, fileSet *token.FileSet, run *sarif.Run, fpath string, acceptMap map[string]int, info *types.Info) bool {
+func LoopCanBeConcurrent(loop Loop, fileSet *token.FileSet, run *sarif.Run, fileLocation *sarif.PhysicalLocation, acceptMap map[string]int, info *types.Info, out io.Writer) bool {
 	// Conditions:
 	// - Loop variable is unique for every iteration
 	// 		- Make sure by checking that it is present in Init, Cond and Post
@@ -79,7 +82,12 @@ func LoopCanBeConcurrent(loop Loop, fileSet *token.FileSet, run *sarif.Run, fpat
 		loopVars = findRangeLoopVars(loop.Range)
 	} else {
 		// This should never happen
-		println("Error: Loop at line", fileSet.Position(loop.Pos).Line, "is neither a for-loop nor a range-loop")
+		_, _ = fmt.Fprintf(out, "Error: Loop at line", fileSet.Position(loop.Pos).Line, "is neither a for-loop nor a range-loop\n")
+		return false
+	}
+	if loopVars == nil {
+		// This loop cannot be made concurrent
+		_, _ = fmt.Fprintf(out, "Rejected:", fileSet.Position(loop.Pos).Line, "; it does not have a unique Loop variable\n")
 		return false
 	}
 
@@ -89,13 +97,13 @@ func LoopCanBeConcurrent(loop Loop, fileSet *token.FileSet, run *sarif.Run, fpat
 	// - what arrays are written to?
 	arraysWrittenTo, err := findLHSIndexExpr(loop.Body, fileSet)
 	if err != nil {
-		println(err.Error())
+		_, _ = fmt.Fprintf(out, err.Error())
 		return false
 	}
 	// - what arrays are read from?
 	arraysReadFrom, err := findRHSIndexExpr(loop.Body, fileSet)
 	if err != nil {
-		println(err.Error())
+		_, _ = fmt.Fprintf(out, err.Error())
 		return false
 	}
 
@@ -105,7 +113,7 @@ func LoopCanBeConcurrent(loop Loop, fileSet *token.FileSet, run *sarif.Run, fpat
 		// To fix this, need to use... object location?
 		if _, exists := arraysReadFrom[arr]; exists {
 			// the array is both read from and written to; this is not allowed
-			println("Cannot make Loop at line", fileSet.Position(loop.Pos).Line, "concurrent because it reads from and writes to the same array: ", arr.Name)
+			_, _ = fmt.Fprintf(out, "Rejected: %d ; it reads from and writes to the same array: %s\n", fileSet.Position(loop.Pos).Line, arr.Name)
 			return false
 		}
 	}
@@ -193,7 +201,7 @@ func LoopCanBeConcurrent(loop Loop, fileSet *token.FileSet, run *sarif.Run, fpat
 			if !stackContains(stack, reflect.TypeOf(&ast.FuncDecl{})) {
 				// return statement found without an enclosing function; this is not allowed
 				canMakeConcurrent = false
-				println("Cannot make Loop at line", fileSet.Position(loop.Pos).Line, "concurrent because it contains a return statement outside a function")
+				_, _ = fmt.Fprintf(out, "Rejected: %d; it contains a return statement outside a function\n", fileSet.Position(loop.Pos).Line)
 			}
 		// BranchStmt is the common denominator for break, continue, goto, and fallthrough
 		// fallthrough is only used in switch; we don't care about those
@@ -211,7 +219,7 @@ func LoopCanBeConcurrent(loop Loop, fileSet *token.FileSet, run *sarif.Run, fpat
 				if !isInStack {
 					// the label we want to goto is not in the stack; this is not allowed
 					canMakeConcurrent = false
-					println("Cannot make Loop at line", fileSet.Position(loop.Pos).Line, "concurrent because it contains a goto statement to a label outside the Loop")
+					_, _ = fmt.Fprintf(out, "Rejected: %d ; it contains a goto statement to a label outside the Loop\n", fileSet.Position(loop.Pos).Line)
 				}
 			}
 			switch b.Tok {
@@ -224,7 +232,7 @@ func LoopCanBeConcurrent(loop Loop, fileSet *token.FileSet, run *sarif.Run, fpat
 					reflect.TypeOf(&ast.TypeSwitchStmt{})) {
 					// break statement found without an enclosing construct; this is not allowed
 					canMakeConcurrent = false
-					println("Cannot make Loop at line", fileSet.Position(loop.Pos).Line, "concurrent because it contains a break statement trying to break the outer loop")
+					_, _ = fmt.Fprintf(out, "Rejected: %d ; it contains a break statement trying to break the outer loop\n", fileSet.Position(loop.Pos).Line)
 				}
 			}
 		}
@@ -257,13 +265,13 @@ func LoopCanBeConcurrent(loop Loop, fileSet *token.FileSet, run *sarif.Run, fpat
 					base := getBaseOfIndex(indexExpr)
 					if base == nil {
 						canMakeConcurrent = false
-						println("Cannot make Loop at line", fileSet.Position(loop.Pos).Line, "concurrent; base of index expression is not an identifier")
+						_, _ = fmt.Fprintf(out, "Rejected: %d ; base of index expression is not an identifier\n", fileSet.Position(loop.Pos).Line)
 						return false
 					}
 					typeof := info.TypeOf(base)
 					if typeof == nil {
 						canMakeConcurrent = false
-						println("Cannot make Loop at line", fileSet.Position(loop.Pos).Line, "concurrent; cannot determine type of indexed variable", base.Name)
+						_, _ = fmt.Fprintf(out, "Rejected: %d ; cannot determine type of indexed variable %s\n", fileSet.Position(loop.Pos).Line, base.Name)
 						return false
 					}
 					typeof = getUnderlying(typeof)
@@ -272,7 +280,7 @@ func LoopCanBeConcurrent(loop Loop, fileSet *token.FileSet, run *sarif.Run, fpat
 					_, arr := typeof.(*types.Array)
 					if !slice && !arr {
 						canMakeConcurrent = false
-						fmt.Printf("Cannot make Loop at line %d, concurrent; only slices and arrays are allowed; typeof: %s\n", fileSet.Position(loop.Pos).Line, typeof.String())
+						_, _ = fmt.Fprintf(out, "Rejected: %d ; only slices and arrays are allowed; typeof: %s\n", fileSet.Position(loop.Pos).Line, typeof.String())
 						return false
 					}
 
@@ -282,7 +290,7 @@ func LoopCanBeConcurrent(loop Loop, fileSet *token.FileSet, run *sarif.Run, fpat
 					}
 					// mark as invalid
 					canMakeConcurrent = false
-					println("Cannot make Loop at line", fileSet.Position(loop.Pos).Line, "concurrent because it writes to an array using a non-Loop variable as the index")
+					_, _ = fmt.Fprintf(out, "Rejected: %d ; it writes to an array using a non-Loop variable as the index\n", fileSet.Position(loop.Pos).Line)
 					return false
 				case *ast.Ident:
 					ident := lhs.(*ast.Ident)
@@ -291,7 +299,7 @@ func LoopCanBeConcurrent(loop Loop, fileSet *token.FileSet, run *sarif.Run, fpat
 						if i.Obj == ident.Obj {
 							// the identifier is the Loop variable; this is not allowed
 							canMakeConcurrent = false
-							println("Cannot make Loop at line", fileSet.Position(loop.Pos).Line, "concurrent because it writes to the Loop variable")
+							_, _ = fmt.Fprintf(out, "Rejected: %d ; it writes to the Loop variable\n", fileSet.Position(loop.Pos).Line)
 							return false
 						}
 					}
@@ -302,11 +310,11 @@ func LoopCanBeConcurrent(loop Loop, fileSet *token.FileSet, run *sarif.Run, fpat
 					}
 					// mark as invalid
 					canMakeConcurrent = false
-					println("Cannot make Loop at line", fileSet.Position(loop.Pos).Line, "concurrent because it writes to '"+ident.Name+"' declared outside the Loop")
+					_, _ = fmt.Fprintf(out, "Rejected: %d ; it writes to '%s' declared outside the Loop\n", fileSet.Position(loop.Pos).Line, ident.Name)
 				default:
 					// unsupported assignment type
 					canMakeConcurrent = false
-					println("Cannot make Loop at line", fileSet.Position(loop.Pos).Line, "concurrent because it writes to an unsupported expression")
+					_, _ = fmt.Fprintf(out, "Rejected: %d ; it writes to an unsupported expression\n", fileSet.Position(loop.Pos).Line)
 				}
 			}
 		case *ast.CallExpr:
@@ -320,12 +328,12 @@ func LoopCanBeConcurrent(loop Loop, fileSet *token.FileSet, run *sarif.Run, fpat
 							// check if this is an accepted identifier
 							if line, exists := acceptMap[ident.Name]; exists && line == fileSet.Position(loop.Pos).Line {
 								// this has been manually approved
-								println("Manually approved")
+								_, _ = fmt.Fprintf(out, "Manually approved")
 								return canMakeConcurrent
 							}
 							// mark as invalid
 							canMakeConcurrent = false
-							println("Cannot make Loop at line", fileSet.Position(loop.Pos).Line, "concurrent because it calls a method on '"+ident.Name+"' declared outside the Loop")
+							_, _ = fmt.Fprintf(out, "Rejected: %d ; it calls a method on '%s' declared outside the Loop\n", fileSet.Position(loop.Pos).Line, ident.Name)
 						}
 						// the identifier is declared within the Loop; this is allowed
 					}
@@ -339,9 +347,9 @@ func LoopCanBeConcurrent(loop Loop, fileSet *token.FileSet, run *sarif.Run, fpat
 		//	if _, exists := assignedTo[ident]; exists {
 		//		if assignedTo[ident] {
 		//			// This is a good candidate for a unit test
-		//			//println("Cannot make Loop at line", fileSet.Position(loop.Pos()).Line, "concurrent because it writes to '"+ident.Name+"' declared outside the Loop")
+		//			//println("Rejected:", fileSet.Position(loop.Pos()).Line, "; it writes to '"+ident.Name+"' declared outside the Loop")
 		//			if run != nil {
-		//				addRunResult(run, "PERFACTOR_RULE_001", "Cannot make Loop concurrent because it writes to '"+ident.Name+"' declared outside the Loop", fpath, loop.Pos(), fileSet)
+		//				addRunResult(run, "PERFACTOR_RULE_001", "Cannot make Loop ; it writes to '"+ident.Name+"' declared outside the Loop", fpath, loop.Pos(), fileSet)
 		//			}
 		//			canMakeConcurrent = false
 		//			// no need to look into subtrees of this node
@@ -396,18 +404,12 @@ func findLoopVars(loop *ast.ForStmt) []*ast.Ident {
 	// make sure they're all altered in the post
 	switch loop.Post.(type) {
 	case *ast.IncDecStmt:
-		if id, ok := loop.Post.(*ast.IncDecStmt).X.(*ast.Ident); ok {
-			// check if the identifier is in the list
-			for _, ident := range idents {
-				if ident.Obj == id.Obj {
-					return idents
-				}
-			}
-			// if we get here, the identifier is not in the list
-			// remove it
-			for _, ident := range idents {
-				if ident.Obj == id.Obj {
-					idents = append(idents[:ident.Obj.Pos()], idents[ident.Obj.Pos()+1:]...)
+		// Only one thing is being incremented; keep it in the list, but remove everything else
+		for _, j := range idents {
+			if ident, ok := loop.Post.(*ast.IncDecStmt).X.(*ast.Ident); ok {
+				if j.Obj == ident.Obj {
+					idents = []*ast.Ident{j}
+					break
 				}
 			}
 		}

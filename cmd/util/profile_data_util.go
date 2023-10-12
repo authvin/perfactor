@@ -28,7 +28,7 @@ func GetProfileDataFromFile(filePath string) *profile.Profile {
 	return prof
 }
 
-func FilterLoopsUsingProfileData(safeLoops []token.Pos, sorted LoopInfoArray, threshold int64) LoopInfoArray {
+func FilterLoopsUsingProfileData(safeLoops []Loop, sorted LoopInfoArray, threshold int64) LoopInfoArray {
 	output := make(LoopInfoArray, 0)
 	for _, lt := range sorted {
 		loop, t := lt.Loop, lt.Time
@@ -49,9 +49,9 @@ func FilterLoopsUsingProfileData(safeLoops []token.Pos, sorted LoopInfoArray, th
 	return output
 }
 
-func contains(loops []token.Pos, pos token.Pos) bool {
+func contains(loops []Loop, pos token.Pos) bool {
 	for _, loop := range loops {
-		if loop == pos {
+		if loop.Pos == pos {
 			return true
 		}
 	}
@@ -86,7 +86,7 @@ func SortLoopsUsingProfileData(prof *profile.Profile, forLoops []Loop, fset *tok
 	return totalCumulativeTime
 }
 
-func GetLoopInfoArray(forLoops []Loop, fset *token.FileSet) LoopInfoArray {
+func GetLoopInfoArray(forLoops []Loop) LoopInfoArray {
 	totalCumulativeTime := make(LoopInfoArray, len(forLoops))
 
 	// find the gr nodes corresponding to the for loops
