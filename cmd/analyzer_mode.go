@@ -1,6 +1,5 @@
 package cmd
 
-//
 //import (
 //	"fmt"
 //	"go/ast"
@@ -72,6 +71,6 @@ package cmd
 //}
 //
 //func (f AnalyzerMode) WriteResult(pf ProgramSettings) {
-//	util.WriteModifiedAST(f.fileSet, f.astFile, pf.Output+p+pf.Id+p+pf.FileName)
+//	util.WriteModifiedAST(f.fileSet, f.astFile, pf.Output+p+pf.Id+p, pf.FileName)
 //	println("Final version written to " + pf.Output + p + pf.Id + p + pf.FileName)
 //}

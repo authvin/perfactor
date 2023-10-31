@@ -1,12 +1,15 @@
 package cmd
 
 import (
+	"bytes"
 	"fmt"
+	"github.com/owenrumney/go-sarif/sarif"
 	"go/ast"
 	"go/token"
 	"go/types"
 	"golang.org/x/tools/go/packages"
 	"io"
+	"os"
 	"perfactor/cmd/util"
 )
 
@@ -17,6 +20,7 @@ type NoData struct {
 	pkgs        []*packages.Package
 	out         io.Writer
 	projectPath string
+	sarifRun    *sarif.Run
 }
 
 func (f NoData) GetWorkingDirPath() string {
@@ -25,6 +29,40 @@ func (f NoData) GetWorkingDirPath() string {
 
 func (f NoData) SetWriter(out io.Writer) RefactoringMode {
 	f.out = out
+	return f
+}
+
+func (f NoData) WriteSarifFile(pf ProgramSettings) {
+	// in order to write the sarif file, we use the sarifRun object and write it to a file
+	report, err := sarif.New(sarif.Version210)
+	if err != nil {
+		println("Error creating SARIF report: " + err.Error())
+		return
+	}
+	report.AddRun(f.sarifRun)
+	buffer := bytes.NewBufferString("")
+	err = report.Write(buffer)
+	if err != nil {
+		println("Error writing SARIF report: " + err.Error())
+		return
+	}
+	// write the buffer to a serif file
+	create, err := os.Create(pf.Id + ".sarif")
+	if err != nil {
+		println("Error creating SARIF file: " + err.Error())
+		return
+	}
+	defer create.Close()
+	_, err = create.Write(buffer.Bytes())
+	if err != nil {
+		println("Error writing SARIF file: " + err.Error())
+		return
+	}
+	println("SARIF file written")
+}
+
+func (f NoData) SetupSarif() RefactoringMode {
+	f.sarifRun = sarif.NewRun("perfactor_wo", "uri_placeholder")
 	return f
 }
 
@@ -41,13 +79,14 @@ func (f NoData) GetLoopInfoArray(fileSet *token.FileSet, pkgName string, project
 
 	loops := util.FindForLoopsInAST(astFile, fileSet, nil)
 
-	safeLoops := util.FindSafeLoopsForRefactoring(loops, fileSet, nil, projectPath+pf.FileName, acceptMap, info, f.out)
+	safeLoops := util.FindSafeLoopsForRefactoring(loops, fileSet, f.sarifRun, projectPath+pf.FileName, acceptMap, info, f.out)
 
 	return f, util.GetLoopInfoArray(safeLoops)
 }
 
-func (f NoData) SetWorkingDirPath(pf ProgramSettings) {
+func (f NoData) SetWorkingDirPath(pf ProgramSettings) RefactoringMode {
 	f.projectPath = pf.ProjectPath
+	return f
 }
 
 func (f NoData) LoadFiles(fileSet *token.FileSet) RefactoringMode {

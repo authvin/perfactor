@@ -39,6 +39,7 @@ func init() {
 	fullCmd.Flags().IntP("Count", "c", 3, "The number of times to run the benchmark")
 	fullCmd.Flags().Float32P("Threshold", "d", 10.0, "The Threshold for the percentage increase in runtime")
 	fullCmd.Flags().BoolP("Mode", "m", false, "Benchmark the program when refactoring")
+	fullCmd.Flags().BoolP("Sarif", "s", false, "Output the results in SARIF format")
 	RootCmd.AddCommand(fullCmd)
 }
 
@@ -62,9 +63,10 @@ func Full(pf ProgramSettings, out io.Writer) {
 		mode = NoData{}
 	}
 	mode = mode.SetWriter(out)
-	mode.SetWorkingDirPath(pf)
+	mode = mode.SetWorkingDirPath(pf)
 	fileSet := token.NewFileSet()
 	mode = mode.LoadFiles(fileSet)
+	mode = mode.SetupSarif()
 	for _, fileName := range pf.FileNames {
 		_, _ = fmt.Fprintf(out, "Running on file: %s\n", fileName)
 		pf.FileName = fileName
@@ -99,6 +101,7 @@ func Full(pf ProgramSettings, out io.Writer) {
 				_, _ = fmt.Fprintf(out, "Error: Mode not set\n")
 				return
 			}
+
 			var result bool
 			var err error
 			mode, result, err = mode.RefactorLoop(loopInfo, pkgName, pf)
@@ -109,6 +112,10 @@ func Full(pf ProgramSettings, out io.Writer) {
 			if result {
 				hasModified = true
 			}
+		}
+		if pf.Sarif {
+			_, _ = fmt.Fprintf(out, "Writing SARIF file\n")
+			mode.WriteSarifFile(pf)
 		}
 
 		if !hasModified {
@@ -187,6 +194,10 @@ func programSettings(cmd *cobra.Command) (ProgramSettings, error) {
 		return pf, err
 	}
 	pf.Mode, err = cmd.Flags().GetBool("Mode")
+	if err != nil {
+		return pf, err
+	}
+	pf.Sarif, err = cmd.Flags().GetBool("Sarif")
 	if err != nil {
 		return pf, err
 	}
@@ -300,6 +311,7 @@ type ProgramSettings struct {
 	Accept      string
 	Mode        bool
 	FileNames   []string
+	Sarif       bool
 }
 
 type RefactoringMode interface {
@@ -309,5 +321,7 @@ type RefactoringMode interface {
 	WriteResult(pf ProgramSettings)
 	GetWorkingDirPath() string
 	SetWriter(out io.Writer) RefactoringMode
-	SetWorkingDirPath(pf ProgramSettings)
+	SetWorkingDirPath(pf ProgramSettings) RefactoringMode
+	WriteSarifFile(pf ProgramSettings)
+	SetupSarif() RefactoringMode
 }

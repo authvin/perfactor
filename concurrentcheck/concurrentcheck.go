@@ -9,6 +9,7 @@ import (
 	"go/token"
 	"go/types"
 	"golang.org/x/tools/go/analysis/singlechecker"
+	"os"
 	"perfactor/cmd/util"
 	"reflect"
 
@@ -83,7 +84,7 @@ func (w ConcurrentLoopVisitor) Visit(n ast.Node) ast.Visitor {
 			Line:    w.f.Position(forStmt.Pos()).Line,
 			EndLine: w.f.Position(forStmt.End()).Line,
 		}
-		if util.LoopCanBeConcurrent(loop, w.f, &w.run, w.fileLocation, w.acceptMap, &w.info) {
+		if util.LoopCanBeConcurrent(loop, w.f, &w.run, w.fileLocation, w.acceptMap, &w.info, os.Stdout) {
 			// Get the statements that will replace the for loop
 			newStmts := util.GetConcurrentLoop(forStmt, w.f, &w.info)
 			var buf bytes.Buffer
@@ -100,18 +101,18 @@ func (w ConcurrentLoopVisitor) Visit(n ast.Node) ast.Visitor {
 				Pos:     n.Pos(),
 				End:     n.Pos() + token.Pos(len("for")),
 				Message: "This for loop can be made concurrent",
-				//SuggestedFixes: []analysis.SuggestedFix{{
-				//	Message: "Make loop concurrent",
-				//	TextEdits: []analysis.TextEdit{{
-				//		Pos:     n.Pos(),
-				//		End:     n.End(),
-				//		NewText: buf.Bytes(),
-				//	}, {
-				//		Pos:     token.NoPos,
-				//		End:     token.NoPos,
-				//		NewText: []byte("\n\"sync\""),
-				//	}},
-				//}},
+				SuggestedFixes: []analysis.SuggestedFix{{
+					Message: "Make loop concurrent",
+					TextEdits: []analysis.TextEdit{{
+						Pos:     n.Pos(),
+						End:     n.End(),
+						NewText: buf.Bytes(),
+					}, {
+						Pos:     token.NoPos,
+						End:     token.NoPos,
+						NewText: []byte("\n\"sync\""),
+					}},
+				}},
 			})
 		}
 	}

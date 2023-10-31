@@ -1,13 +1,16 @@
 package cmd
 
 import (
+	"bytes"
 	"fmt"
+	"github.com/owenrumney/go-sarif/sarif"
 	"github.com/plus3it/gorecurcopy"
 	"go/ast"
 	"go/token"
 	"go/types"
 	"golang.org/x/tools/go/packages"
 	"io"
+	"os"
 	"perfactor/cmd/util"
 	"strings"
 	"time"
@@ -22,13 +25,47 @@ type WithData struct {
 	pkgs            []*packages.Package
 	out             io.Writer
 	tmpPath         string
+	sarifRun        *sarif.Run
 }
 
 func (f WithData) GetWorkingDirPath() string {
 	return f.tmpPath
 }
 
-func (f WithData) SetWorkingDirPath(pf ProgramSettings) {
+func (f WithData) WriteSarifFile(pf ProgramSettings) {
+	// in order to write the sarif file, we use the sarifRun object and write it to a file
+	report, err := sarif.New(sarif.Version210)
+	if err != nil {
+		println("Error creating SARIF report: " + err.Error())
+		return
+	}
+	report.AddRun(f.sarifRun)
+	buffer := bytes.NewBufferString("")
+	err = report.Write(buffer)
+	if err != nil {
+		println("Error writing SARIF report: " + err.Error())
+		return
+	}
+	// write the buffer to a serif file
+	create, err := os.Create(pf.Id + ".sarif")
+	if err != nil {
+		println("Error creating SARIF file: " + err.Error())
+		return
+	}
+	defer create.Close()
+	_, err = create.Write(buffer.Bytes())
+	if err != nil {
+		println("Error writing SARIF file: " + err.Error())
+		return
+	}
+	println("SARIF file written")
+}
+func (f WithData) SetupSarif() RefactoringMode {
+	f.sarifRun = sarif.NewRun("perfactor_w", "uri_placeholder")
+	return f
+}
+
+func (f WithData) SetWorkingDirPath(pf ProgramSettings) RefactoringMode {
 	// The tmp folder - underscore is go nomenclature for an ignored folder
 	// it's called tmp to indicate that contents can be deleted without warning
 	tmpPath := "_tmp" + p + pf.Id + p
@@ -38,16 +75,17 @@ func (f WithData) SetWorkingDirPath(pf ProgramSettings) {
 	err := gorecurcopy.CopyDirectory(pf.ProjectPath, tmpPath)
 	if err != nil {
 		_, _ = fmt.Fprintf(f.out, "Error copying project folder to temp folder: %v\n", err.Error())
-		return
+		return f
 	}
 	// run the go mod download command to get the dependencies
 	err = downloadRequiredFromModule(err, tmpPath, f.out)
 	if err != nil {
 		_, _ = fmt.Fprintf(f.out, "Error downloading dependencies: %s\n", err.Error())
 		_, _ = fmt.Fprintf(f.out, "Does the destination have a go.mod file?\n")
-		return
+		return f
 	}
 	f.tmpPath = tmpPath
+	return f
 }
 
 func (f WithData) SetWriter(out io.Writer) RefactoringMode {

@@ -2,6 +2,7 @@ package util
 
 import (
 	"errors"
+	"fmt"
 	"go/ast"
 	"go/importer"
 	"go/parser"
@@ -100,7 +101,7 @@ func GetPackageNameFromPath(inputPath string) string {
 	// parse the file
 	f, err := parser.ParseFile(fset, inputPath, nil, parser.PackageClauseOnly)
 	if err != nil {
-		println("Failed to parse AST from file: " + err.Error())
+		fmt.Printf("Failed to get package name from file %s: %v\n", inputPath, err.Error())
 		os.Exit(0)
 	}
 	return f.Name.Name
