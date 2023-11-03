@@ -33,11 +33,44 @@ type Result struct {
 }
 
 func RunTests() {
-	result := VerifyFile("branch.go", tests.BranchPredictions)
-	fmt.Printf("Correct: %d\n", result.Correct)
-	fmt.Printf("Incorrect: %d\n", result.Incorrect)
-	fmt.Printf("Not found: %d\n", result.NotFound)
-	fmt.Printf("Unexpected: %d\n", result.Unexpected)
+	dirEntry, err := os.ReadDir("tests")
+	if err != nil {
+		fmt.Printf("Error reading directory: %s\n", err.Error())
+		return
+	}
+	for _, entry := range dirEntry {
+		if entry.IsDir() {
+			continue
+		}
+		if entry.Name() == "make_pred_map.go" || entry.Name() == "prediction.go" {
+			continue
+		}
+		if entry.Name()[len(entry.Name())-3:] == ".go" {
+			predictions := getPredictions(entry.Name())
+			result := VerifyFile(entry.Name(), predictions)
+			fmt.Printf("Correct: %d\n", result.Correct)
+			fmt.Printf("Incorrect: %d\n", result.Incorrect)
+			fmt.Printf("Not found: %d\n", result.NotFound)
+			fmt.Printf("Unexpected: %d\n", result.Unexpected)
+		}
+	}
+}
+
+func getPredictions(s string) map[int]tests.Prediction {
+	switch s {
+	case "array.go":
+		return tests.ArrayPredictions
+	case "branch.go":
+		return tests.BranchPredictions
+	case "loopvar.go":
+		return tests.LoopvarPredictions
+	case "return.go":
+		return tests.ReturnPredictions
+	default:
+		println("No predictions found for " + s)
+		os.Exit(0)
+	}
+	return nil
 }
 
 // BufferAndStdoutWriter implements io.Writer
@@ -75,7 +108,7 @@ func VerifyFile(fileName string, predictions map[int]tests.Prediction) Result {
 	// Initialize a map to keep track of the lines you've checked
 	checkedLines := make(map[int]bool)
 	pf := ProgramSettings{
-		ProjectPath: "..",                // Need to run with root as project path
+		ProjectPath: "./",                // Need to run with root as project path
 		FileName:    "tests/" + fileName, // File path will need to be prefixed with "tests/"
 		Mode:        false,               // Because we're working on ourself, we can't run benchmarks - infinite recursion
 		Id:          "test",
@@ -119,6 +152,7 @@ func VerifyFile(fileName string, predictions map[int]tests.Prediction) Result {
 				res.Correct++
 			} else {
 				res.Incorrect++
+				fmt.Printf("Incorrect result: %s\n", lineContent)
 			}
 		} else {
 			fmt.Printf("Unexpected result: %s\n", lineContent)

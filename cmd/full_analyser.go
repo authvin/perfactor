@@ -70,9 +70,9 @@ func fullA(cmd *cobra.Command, args []string) {
 	}
 
 	a := concurrentcheck.Analyzer
-	pf, error := programSettings(cmd)
-	if error != nil {
-		fmt.Printf("Error getting Flags: %s\n", error.Error())
+	pf, err := programSettings(cmd)
+	if err != nil {
+		fmt.Printf("Error getting Flags: %s\n", err.Error())
 		return
 	}
 	RunAnalyser(a, ProjectPath, Id, pf)
@@ -112,9 +112,9 @@ func RunAnalyser(a *analysis.Analyzer, ProjectPath, Id string, pf ProgramSetting
 				Report:   func(d analysis.Diagnostic) {},
 				ResultOf: resultsOf,
 			}
-			result, error := req.Run(pass)
-			if error != nil {
-				println("Error running prerequisite: " + error.Error())
+			result, err := req.Run(pass)
+			if err != nil {
+				println("Error running prerequisite: " + err.Error())
 				return
 			}
 			fmt.Printf("Adding result of prerequisite: %s\n", req.Name)

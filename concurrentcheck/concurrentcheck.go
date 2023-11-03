@@ -96,7 +96,6 @@ func (w ConcurrentLoopVisitor) Visit(n ast.Node) ast.Visitor {
 				// newline between the statements
 				buf.WriteByte('\n')
 			}
-			//w.pass.Reportf(forStmt.Pos(), "This for loop can be made concurrent")
 			w.pass.Report(analysis.Diagnostic{
 				Pos:     n.Pos(),
 				End:     n.Pos() + token.Pos(len("for")),

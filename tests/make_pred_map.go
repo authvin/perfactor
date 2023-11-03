@@ -24,7 +24,7 @@ func ProcessGoFile(filename string) error {
 	for _, commentGroup := range node.Comments {
 		for _, comment := range commentGroup.List {
 			position := fset.Position(comment.Pos())
-			fmt.Println(comment.Text, position.Line) // Debugging line
+			//fmt.Println(comment.Text, position.Line) // Debugging line
 			switch comment.Text {
 			case "// Allowed":
 				predictions[position.Line] = Prediction{Line: position.Line, ShouldPass: true}

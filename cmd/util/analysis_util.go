@@ -88,7 +88,10 @@ func LoopCanBeConcurrent(loop Loop, fileSet *token.FileSet, run *sarif.Run, file
 	}
 	if loopVars == nil {
 		// This loop cannot be made concurrent
-		_, _ = fmt.Fprintf(out, "Rejected:", fileSet.Position(loop.Pos).Line, "; it does not have a unique Loop variable\n")
+		_, _ = fmt.Fprintf(out, "Rejected: %d ; it does not have a unique Loop variable\n", fileSet.Position(loop.Pos).Line)
+		if run != nil {
+			addRunResult(run, "PERFACTOR_RULE_001", "Cannot make Loop ; it does not have a unique Loop variable", fileLocation, loop.Pos, fileSet)
+		}
 		return false
 	}
 
@@ -110,17 +113,19 @@ func LoopCanBeConcurrent(loop Loop, fileSet *token.FileSet, run *sarif.Run, file
 
 	// ensure that no arrays are both read from and written to
 	for arr, _ := range arraysWrittenTo {
-		// TODO: This won't work, because the map keys are not the same
-		// To fix this, need to use... object location?
-		if _, exists := arraysReadFrom[arr]; exists {
-			// the array is both read from and written to; this is not allowed
-			_, _ = fmt.Fprintf(out, "Rejected: %d ; it reads from and writes to the same array: %s\n", fileSet.Position(loop.Pos).Line, arr.Name)
-			return false
+		obj := arr.Obj
+		for arr2, _ := range arraysReadFrom {
+			if arr2.Obj == obj {
+				// we have a match
+				// the array is both read from and written to; this is not allowed
+				_, _ = fmt.Fprintf(out, "Rejected: %d ; it reads from and writes to the same array: %s\n", fileSet.Position(loop.Pos).Line, arr.Name)
+				if run != nil {
+					addRunResult(run, "PERFACTOR_RULE_002", "Cannot make Loop ; it reads from and writes to the same array: "+arr.Name, fileLocation, loop.Pos, fileSet)
+				}
+				return false
+			}
 		}
 	}
-
-	// - what variables are written to?
-	//assignedTo := FindAssignedIdentifiers(loop)
 
 	canMakeConcurrent := true
 
@@ -205,7 +210,7 @@ func LoopCanBeConcurrent(loop Loop, fileSet *token.FileSet, run *sarif.Run, file
 				_, _ = fmt.Fprintf(out, "Rejected: %d; it contains a return statement outside a function\n", fileSet.Position(loop.Pos).Line)
 				// add SARIF part
 				if run != nil {
-					addRunResult(run, "PERFACTOR_RULE_002", "Cannot make Loop ; it contains a return statement outside a function", fileLocation, loop.Pos, fileSet)
+					addRunResult(run, "PERFACTOR_RULE_003", "Cannot make Loop ; it contains a return statement outside a function", fileLocation, loop.Pos, fileSet)
 				}
 			}
 		// BranchStmt is the common denominator for break, continue, goto, and fallthrough
@@ -226,7 +231,7 @@ func LoopCanBeConcurrent(loop Loop, fileSet *token.FileSet, run *sarif.Run, file
 					canMakeConcurrent = false
 					_, _ = fmt.Fprintf(out, "Rejected: %d ; it contains a goto statement to a label outside the Loop\n", fileSet.Position(loop.Pos).Line)
 					if run != nil {
-						addRunResult(run, "PERFACTOR_RULE_003", "Cannot make Loop ; it contains a goto statement to a label outside the Loop", fileLocation, loop.Pos, fileSet)
+						addRunResult(run, "PERFACTOR_RULE_004", "Cannot make Loop ; it contains a goto statement to a label outside the Loop", fileLocation, loop.Pos, fileSet)
 					}
 				}
 			}
@@ -242,7 +247,7 @@ func LoopCanBeConcurrent(loop Loop, fileSet *token.FileSet, run *sarif.Run, file
 					canMakeConcurrent = false
 					_, _ = fmt.Fprintf(out, "Rejected: %d ; it contains a break statement trying to break the outer loop\n", fileSet.Position(loop.Pos).Line)
 					if run != nil {
-						addRunResult(run, "PERFACTOR_RULE_004", "Cannot make Loop ; it contains a break statement trying to break the outer loop", fileLocation, loop.Pos, fileSet)
+						addRunResult(run, "PERFACTOR_RULE_005", "Cannot make Loop ; it contains a break statement trying to break the outer loop", fileLocation, loop.Pos, fileSet)
 					}
 				}
 			}
@@ -278,7 +283,7 @@ func LoopCanBeConcurrent(loop Loop, fileSet *token.FileSet, run *sarif.Run, file
 						canMakeConcurrent = false
 						_, _ = fmt.Fprintf(out, "Rejected: %d ; base of index expression is not an identifier\n", fileSet.Position(loop.Pos).Line)
 						if run != nil {
-							addRunResult(run, "PERFACTOR_RULE_005", "Cannot make Loop ; base of index expression is not an identifier", fileLocation, loop.Pos, fileSet)
+							addRunResult(run, "PERFACTOR_RULE_006", "Cannot make Loop ; base of index expression is not an identifier", fileLocation, loop.Pos, fileSet)
 						}
 						return false
 					}
@@ -287,7 +292,7 @@ func LoopCanBeConcurrent(loop Loop, fileSet *token.FileSet, run *sarif.Run, file
 						canMakeConcurrent = false
 						_, _ = fmt.Fprintf(out, "Rejected: %d ; cannot determine type of indexed variable %s\n", fileSet.Position(loop.Pos).Line, base.Name)
 						if run != nil {
-							addRunResult(run, "PERFACTOR_RULE_006", "Cannot make Loop ; cannot determine type of indexed variable "+base.Name, fileLocation, loop.Pos, fileSet)
+							addRunResult(run, "PERFACTOR_RULE_007", "Cannot make Loop ; cannot determine type of indexed variable "+base.Name, fileLocation, loop.Pos, fileSet)
 						}
 						return false
 					}
@@ -299,7 +304,7 @@ func LoopCanBeConcurrent(loop Loop, fileSet *token.FileSet, run *sarif.Run, file
 						canMakeConcurrent = false
 						_, _ = fmt.Fprintf(out, "Rejected: %d ; only slices and arrays are allowed; typeof: %s\n", fileSet.Position(loop.Pos).Line, typeof.String())
 						if run != nil {
-							addRunResult(run, "PERFACTOR_RULE_007", "Cannot make Loop ; only slices and arrays are allowed; typeof: "+typeof.String(), fileLocation, loop.Pos, fileSet)
+							addRunResult(run, "PERFACTOR_RULE_008", "Cannot make Loop ; only slices and arrays are allowed; typeof: "+typeof.String(), fileLocation, loop.Pos, fileSet)
 						}
 						return false
 					}
@@ -312,7 +317,7 @@ func LoopCanBeConcurrent(loop Loop, fileSet *token.FileSet, run *sarif.Run, file
 					canMakeConcurrent = false
 					_, _ = fmt.Fprintf(out, "Rejected: %d ; it writes to an array using a non-Loop variable as the index\n", fileSet.Position(loop.Pos).Line)
 					if run != nil {
-						addRunResult(run, "PERFACTOR_RULE_008", "Cannot make Loop ; it writes to an array using a non-Loop variable as the index", fileLocation, loop.Pos, fileSet)
+						addRunResult(run, "PERFACTOR_RULE_009", "Cannot make Loop ; it writes to an array using a non-Loop variable as the index", fileLocation, loop.Pos, fileSet)
 					}
 					return false
 				case *ast.Ident:
@@ -324,7 +329,7 @@ func LoopCanBeConcurrent(loop Loop, fileSet *token.FileSet, run *sarif.Run, file
 							canMakeConcurrent = false
 							_, _ = fmt.Fprintf(out, "Rejected: %d ; it writes to the Loop variable\n", fileSet.Position(loop.Pos).Line)
 							if run != nil {
-								addRunResult(run, "PERFACTOR_RULE_009", "Cannot make Loop ; it writes to the Loop variable", fileLocation, loop.Pos, fileSet)
+								addRunResult(run, "PERFACTOR_RULE_010", "Cannot make Loop ; it writes to the Loop variable", fileLocation, loop.Pos, fileSet)
 							}
 							return false
 						}
@@ -338,14 +343,14 @@ func LoopCanBeConcurrent(loop Loop, fileSet *token.FileSet, run *sarif.Run, file
 					canMakeConcurrent = false
 					_, _ = fmt.Fprintf(out, "Rejected: %d ; it writes to '%s' declared outside the Loop\n", fileSet.Position(loop.Pos).Line, ident.Name)
 					if run != nil {
-						addRunResult(run, "PERFACTOR_RULE_010", "Cannot make Loop ; it writes to '"+ident.Name+"' declared outside the Loop", fileLocation, loop.Pos, fileSet)
+						addRunResult(run, "PERFACTOR_RULE_011", "Cannot make Loop ; it writes to '"+ident.Name+"' declared outside the Loop", fileLocation, loop.Pos, fileSet)
 					}
 				default:
 					// unsupported assignment type
 					canMakeConcurrent = false
 					_, _ = fmt.Fprintf(out, "Rejected: %d ; it writes to an unsupported expression\n", fileSet.Position(loop.Pos).Line)
 					if run != nil {
-						addRunResult(run, "PERFACTOR_RULE_011", "Cannot make Loop ; it writes to an unsupported expression", fileLocation, loop.Pos, fileSet)
+						addRunResult(run, "PERFACTOR_RULE_012", "Cannot make Loop ; it writes to an unsupported expression", fileLocation, loop.Pos, fileSet)
 					}
 				}
 			}
@@ -367,7 +372,7 @@ func LoopCanBeConcurrent(loop Loop, fileSet *token.FileSet, run *sarif.Run, file
 							canMakeConcurrent = false
 							_, _ = fmt.Fprintf(out, "Rejected: %d ; it calls a method on '%s' declared outside the Loop\n", fileSet.Position(loop.Pos).Line, ident.Name)
 							if run != nil {
-								addRunResult(run, "PERFACTOR_RULE_012", "Cannot make Loop ; it calls a method on '"+ident.Name+"' declared outside the Loop", fileLocation, loop.Pos, fileSet)
+								addRunResult(run, "PERFACTOR_RULE_013", "Cannot make Loop ; it calls a method on '"+ident.Name+"' declared outside the Loop", fileLocation, loop.Pos, fileSet)
 							}
 						}
 						// the identifier is declared within the Loop; this is allowed
@@ -375,23 +380,7 @@ func LoopCanBeConcurrent(loop Loop, fileSet *token.FileSet, run *sarif.Run, file
 				}
 			}
 			// it's a function call, not a method call
-			//
 		}
-
-		//if ident, ok := n.(*ast.Ident); ok {
-		//	if _, exists := assignedTo[ident]; exists {
-		//		if assignedTo[ident] {
-		//			// This is a good candidate for a unit test
-		//			//println("Rejected:", fileSet.Position(loop.Pos()).Line, "; it writes to '"+ident.Name+"' declared outside the Loop")
-		//			if run != nil {
-		//				addRunResult(run, "PERFACTOR_RULE_001", "Cannot make Loop ; it writes to '"+ident.Name+"' declared outside the Loop", fpath, loop.Pos(), fileSet)
-		//			}
-		//			canMakeConcurrent = false
-		//			// no need to look into subtrees of this node
-		//			return false
-		//		}
-		//	}
-		//}
 		return canMakeConcurrent
 	})
 
@@ -625,6 +614,9 @@ func traverseExpr(expr ast.Expr, identMap map[*ast.Ident]bool) bool {
 				return false
 			}
 		}
+		return true
+	case *ast.BasicLit:
+		// we don't care about literals
 		return true
 	default:
 		// we have something that's not directly indexing an identifier - we don't handle this currently

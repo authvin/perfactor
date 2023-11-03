@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"github.com/spf13/cobra"
+	"os"
 	"perfactor/tests"
 )
 
@@ -21,7 +22,29 @@ func init() {
 func run_make_tests(cmd *cobra.Command, args []string) {
 	fileName := cmd.Flag("filename").Value.String()
 	if fileName == "" {
-		fmt.Printf("Error: filename is required\n")
+		// without filename, we instead just do it for all files ending with .go
+		// except make_pred_map.go and prediction.go
+		dirEntry, err := os.ReadDir("tests")
+		if err != nil {
+			fmt.Printf("Error reading directory: %s\n", err.Error())
+			return
+		}
+		for _, entry := range dirEntry {
+			if entry.IsDir() {
+				continue
+			}
+			if entry.Name() == "make_pred_map.go" || entry.Name() == "prediction.go" {
+				continue
+			}
+			if entry.Name()[len(entry.Name())-3:] == ".go" {
+				err := tests.ProcessGoFile("tests/" + entry.Name())
+				if err != nil {
+					fmt.Printf("Error processing file: %s\n", err.Error())
+					return
+				}
+			}
+			println("Predictions map made for " + entry.Name())
+		}
 		return
 	}
 	err := tests.ProcessGoFile(fileName)
