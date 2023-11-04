@@ -9,9 +9,17 @@ func Functional(size int) {
 	for i := 0; i < size; i++ { // Allowed
 		result <- i
 	}
+	// the i is being shadowed, in which case it is allowed to assign to it
+	for i := 0; i < 10; i++ { // Allowed
+		go func() {
+			i := 5
+			i++
+		}()
+	}
 }
 
 func Rule001() {
+	// rule 001: must declare, use, and increment the loop variable
 	// this method fails because it doesn't increment the variable, and is an infinite loop
 	result := make(chan int, 10)
 	for i, j := 0, 0; i < 10; j++ { // Not allowed
@@ -32,12 +40,21 @@ func Rule001() {
 }
 
 func Rule010() {
-
+	// rule 010: cannot assign to the loop variable
+	for i := 0; i < 10; i++ { // Not allowed
+		i = 5
+	}
+	for i := 0; i < 10; i++ { // Not allowed
+		i++
+	}
 }
 
 var LoopvarPredictions = map[int]Prediction{
-	22: {22, false},
-	28: {28, false},
 	9:  {9, true},
-	17: {17, false},
+	13: {13, true},
+	25: {25, false},
+	30: {30, false},
+	36: {36, false},
+	44: {44, false},
+	47: {47, false},
 }

@@ -354,6 +354,31 @@ func LoopCanBeConcurrent(loop Loop, fileSet *token.FileSet, run *sarif.Run, file
 					}
 				}
 			}
+		case *ast.IncDecStmt:
+			// check if the incDecStmt contains the Loop variable - not allowed
+			if incDecStmt, ok := n.(*ast.IncDecStmt); ok {
+				if ident, ok := incDecStmt.X.(*ast.Ident); ok {
+					// check if the incDecStmt modifies a variable declared outside the loop - not allowed
+					if ident.Obj.Pos() < loop.Pos || ident.Obj.Pos() > loop.End {
+						canMakeConcurrent = false
+						_, _ = fmt.Fprintf(out, "Rejected: %d ; it modifies a variable declared outside the Loop\n", fileSet.Position(loop.Pos).Line)
+						if run != nil {
+							addRunResult(run, "PERFACTOR_RULE_011", "Cannot make Loop ; it modifies '"+ident.Name+"' declared outside the Loop", fileLocation, loop.Pos, fileSet)
+						}
+						return false
+					}
+				}
+				if incDecContainsLoopVar(incDecStmt, loopVars) {
+					// the incDecStmt contains the Loop variable; this is not allowed
+					canMakeConcurrent = false
+					_, _ = fmt.Fprintf(out, "Rejected: %d ; it modifies the Loop variable\n", fileSet.Position(loop.Pos).Line)
+					if run != nil {
+						addRunResult(run, "PERFACTOR_RULE_010", "Cannot make Loop ; it modifies the Loop variable", fileLocation, loop.Pos, fileSet)
+					}
+					return false
+				}
+			}
+			return canMakeConcurrent
 		case *ast.CallExpr:
 			// check if the call is a method call
 			if call, ok := n.(*ast.CallExpr); ok {
@@ -494,6 +519,17 @@ func indexContainsLoopVar(expr *ast.IndexExpr, loopVars []*ast.Ident) bool {
 	if index, ok := expr.X.(*ast.IndexExpr); ok {
 		if indexContainsLoopVar(index, loopVars) {
 			return true
+		}
+	}
+	return false
+}
+
+func incDecContainsLoopVar(expr *ast.IncDecStmt, loopVars []*ast.Ident) bool {
+	if ident, ok := expr.X.(*ast.Ident); ok {
+		for _, i := range loopVars {
+			if i.Obj == ident.Obj {
+				return true
+			}
 		}
 	}
 	return false

@@ -66,6 +66,10 @@ func getPredictions(s string) map[int]tests.Prediction {
 		return tests.LoopvarPredictions
 	case "return.go":
 		return tests.ReturnPredictions
+	case "methodcall.go":
+		return tests.MethodcallPredictions
+	case "assign.go":
+		return tests.AssignPredictions
 	default:
 		println("No predictions found for " + s)
 		os.Exit(0)

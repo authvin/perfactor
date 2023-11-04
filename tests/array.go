@@ -56,10 +56,10 @@ func Rule009() {
 }
 
 var ArrayPredictions = map[int]Prediction{
+	44: {44, false},
+	52: {52, false},
 	9:  {9, true},
 	17: {17, false},
 	25: {25, false},
 	30: {30, false},
-	44: {44, false},
-	52: {52, false},
 }
