@@ -81,14 +81,14 @@ func Rule005() {
 
 var BranchPredictions = map[int]Prediction{
 	9:  {9, true},
-	23: {23, true},
+	36: {36, true},
+	69: {69, false},
 	51: {51, true},
 	60: {60, true},
 	61: {61, false},
-	69: {69, false},
 	8:  {8, true},
 	22: {22, true},
-	36: {36, true},
+	23: {23, true},
 	37: {37, false},
 	47: {47, false},
 	73: {73, true},

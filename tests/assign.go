@@ -44,12 +44,27 @@ func Rule012() {
 	}
 }
 
+func Rule014() {
+	// rule 014: external reference stored as a local variable
+	var arr [10]int
+	for i := 0; i < 10; i++ { // Not allowed
+		arr2 := &arr
+		arr2[i] = arr[i] + 1
+	}
+	arr2 := &arr
+	for i := 0; i < 10; i++ { // Not allowed
+		arr2[i] = arr[i] + 1
+	}
+}
+
 var AssignPredictions = map[int]Prediction{
-	28: {28, false},
-	29: {29, false},
-	41: {41, false},
 	8:  {8, true},
 	9:  {9, true},
 	20: {20, false},
 	24: {24, false},
+	50: {50, false},
+	28: {28, false},
+	29: {29, false},
+	41: {41, false},
+	55: {55, false},
 }

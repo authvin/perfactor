@@ -7,7 +7,7 @@ import (
 	"go/token"
 	"os"
 	"perfactor/cmd/util"
-	"perfactor/concurrentcheck"
+	"perfactor/parallel_analyser"
 	"sort"
 	"strings"
 
@@ -69,7 +69,7 @@ func fullA(cmd *cobra.Command, args []string) {
 		Id = u.String()
 	}
 
-	a := concurrentcheck.Analyzer
+	a := parallel_analyser.Analyzer
 	pf, err := programSettings(cmd)
 	if err != nil {
 		fmt.Printf("Error getting Flags: %s\n", err.Error())

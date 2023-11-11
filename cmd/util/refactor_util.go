@@ -37,7 +37,7 @@ func GetConcurrentLoop(n *ast.ForStmt, fset *token.FileSet, info *types.Info) []
 	//-3- && -4- Create the block for the goroutine, and add the wg.Done() call to a deferred call
 	block := makeGoroutineBlock(wgIdent)
 	//-5- append all the statements in the for Loop to the body of the goroutine
-	block.List = append(block.List, n.Body.List...)
+	block.List = append(block.List, handleContinueStatements(n.Body.List)...)
 
 	//-6- set up the go stmt with fields with the types from the rhs of loop var assign statements
 	goStmt := makeGoStmt(n, info, block)
@@ -80,7 +80,7 @@ func GetConcurrentRangeLoop(n *ast.RangeStmt, fset *token.FileSet, info *types.I
 	//-3- && -4- Create the block for the goroutine, and add the wg.Done() call to a deferred call
 	block := makeGoroutineBlock(wgIdent)
 	//-5- append all the statements in the for Loop to the body of the goroutine
-	block.List = append(block.List, n.Body.List...)
+	block.List = append(block.List, handleContinueStatements(n.Body.List)...)
 
 	//-6- set up the go stmt with fields with the types from the rhs of loop var assign statements
 	goStmt := makeGoStmtForRange(n, info, block)
@@ -111,6 +111,31 @@ func GetConcurrentRangeLoop(n *ast.RangeStmt, fset *token.FileSet, info *types.I
 	stmts = append(stmts, wgWaitCall)
 
 	return stmts
+}
+
+func handleContinueStatements(list []ast.Stmt) []ast.Stmt {
+	// traverse - if we find a continue, replace it with a return
+	for i := 0; i < len(list); i++ {
+		ast.Inspect(list[i], func(n ast.Node) bool {
+			if n == nil {
+				return false
+			}
+			if _, ok := n.(*ast.ForStmt); ok {
+				// we don't need to look into this; any continue will be referring to the inner loop
+				return false
+			}
+			if _, ok := n.(*ast.RangeStmt); ok {
+				return false
+			}
+			if stmt, ok := n.(*ast.BranchStmt); ok {
+				if stmt.Tok == token.CONTINUE {
+					list[i] = &ast.ReturnStmt{Return: stmt.Pos()}
+				}
+			}
+			return true
+		})
+	}
+	return list
 }
 
 func MakeLoopConcurrent(astFile *ast.File, fset *token.FileSet, line int, info *types.Info) {

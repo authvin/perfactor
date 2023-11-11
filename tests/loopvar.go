@@ -50,11 +50,11 @@ func Rule010() {
 }
 
 var LoopvarPredictions = map[int]Prediction{
+	47: {47, false},
 	9:  {9, true},
 	13: {13, true},
 	25: {25, false},
 	30: {30, false},
 	36: {36, false},
 	44: {44, false},
-	47: {47, false},
 }

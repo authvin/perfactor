@@ -25,15 +25,17 @@ func (l LoopInfoArray) AddLines(loop Loop) {
 	// modify the array, adding line numbers that have been inserted by the loop passed as argument
 	for _, lt := range l {
 		// if this loop is before the loop passed as argument, skip it
-		if lt.Loop.Line <= loop.Line {
+		if lt.Loop.EndLine <= loop.Line {
 			continue
-		}
-		if lt.Loop.Line <= loop.EndLine {
+		} else if lt.Loop.Line <= loop.Line {
+			// this loop surrounds the loop being modified - add 7, but only to the endline
+			lt.Loop.EndLine += 7
+		} else if lt.Loop.Line <= loop.EndLine {
 			// we are inside the loop being modified - add 4 to the line numbers
 			lt.Loop.Line += 4
 			lt.Loop.EndLine += 4
 		} else {
-			// we are after the loop being modified - add 5 to the line numbers
+			// we are after the loop being modified - add 7 to the line numbers
 			lt.Loop.Line += 7
 			lt.Loop.EndLine += 7
 		}

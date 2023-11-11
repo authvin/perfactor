@@ -7,7 +7,7 @@ package cmd
 //	"go/types"
 //	"golang.org/x/tools/go/analysis"
 //	"perfactor/cmd/util"
-//	"perfactor/concurrentcheck"
+//	"perfactor/parallel_analyser"
 //)
 //
 //type AnalyzerMode struct {
@@ -27,7 +27,7 @@ package cmd
 //	f.info = info
 //	acceptMap := getAcceptMap(pf.Accept)
 //
-//	a := concurrentcheck.Analyzer
+//	a := parallel_analyser.Analyzer
 //	resultsOf := make(map[*analysis.Analyzer]interface{})
 //	if len(a.Requires) > 0 {
 //		for _, req := range a.Requires {

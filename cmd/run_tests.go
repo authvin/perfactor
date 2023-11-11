@@ -70,6 +70,8 @@ func getPredictions(s string) map[int]tests.Prediction {
 		return tests.MethodcallPredictions
 	case "assign.go":
 		return tests.AssignPredictions
+	case "defer.go":
+		return tests.DeferPredictions
 	default:
 		println("No predictions found for " + s)
 		os.Exit(0)

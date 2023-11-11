@@ -251,6 +251,16 @@ func LoopCanBeConcurrent(loop Loop, fileSet *token.FileSet, run *sarif.Run, file
 					}
 				}
 			}
+		case *ast.DeferStmt:
+			// only allow defer statements inside functions
+			if !stackContains(stack, reflect.TypeOf(&ast.FuncDecl{})) {
+				// defer statement found without an enclosing function; this is not allowed
+				canMakeConcurrent = false
+				_, _ = fmt.Fprintf(out, "Rejected: %d ; it contains a defer statement outside a function\n", fileSet.Position(loop.Pos).Line)
+				if run != nil {
+					addRunResult(run, "PERFACTOR_RULE_015", "Cannot make Loop ; it contains a defer statement outside a function", fileLocation, loop.Pos, fileSet)
+				}
+			}
 		}
 		return false
 	})
@@ -351,6 +361,37 @@ func LoopCanBeConcurrent(loop Loop, fileSet *token.FileSet, run *sarif.Run, file
 					_, _ = fmt.Fprintf(out, "Rejected: %d ; it writes to an unsupported expression\n", fileSet.Position(loop.Pos).Line)
 					if run != nil {
 						addRunResult(run, "PERFACTOR_RULE_012", "Cannot make Loop ; it writes to an unsupported expression", fileLocation, loop.Pos, fileSet)
+					}
+				}
+			}
+			for _, rhs := range n.(*ast.AssignStmt).Rhs {
+				// Let's check if the right hand side is a unary &, which means we're pulling a reference into local scope - daaaangerous!
+				if unary, ok := rhs.(*ast.UnaryExpr); ok {
+					if unary.Op == token.AND {
+						// we're taking a reference to something, which means we're taking a reference to something outside the scope of the loop
+						canMakeConcurrent = false
+						_, _ = fmt.Fprintf(out, "Rejected: %d ; it stores an external pointer as a local variable\n", fileSet.Position(loop.Pos).Line)
+						if run != nil {
+							addRunResult(run, "PERFACTOR_RULE_014", "Cannot make Loop ; it stores an external pointer as a local variable", fileLocation, loop.Pos, fileSet)
+						}
+						return false
+					}
+				}
+				if ident, ok := rhs.(*ast.Ident); ok {
+					// let's see if the identifier is a pointer type
+					typeof := info.TypeOf(ident)
+					if typeof != nil {
+						typeof = getUnderlying(typeof)
+						_, ptr := typeof.(*types.Pointer)
+						if ptr && (ident.Obj.Pos() < loop.Pos || ident.Obj.Pos() > loop.End) {
+							// this is a pointer type, and it's declared outside the loop
+							canMakeConcurrent = false
+							_, _ = fmt.Fprintf(out, "Rejected: %d ; it stores an external pointer as a local variable\n", fileSet.Position(loop.Pos).Line)
+							if run != nil {
+								addRunResult(run, "PERFACTOR_RULE_014", "Cannot make Loop ; it stores an external pointer as a local variable", fileLocation, loop.Pos, fileSet)
+							}
+							return false
+						}
 					}
 				}
 			}
