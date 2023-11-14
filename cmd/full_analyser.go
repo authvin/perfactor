@@ -19,7 +19,7 @@ import (
 
 var fullACmd = &cobra.Command{
 	Use:     "fullA",
-	Short:   "Run the full program",
+	Short:   "Run the full program, but using the analyzer (outdated)",
 	Aliases: []string{"fa"},
 	Run:     fullA,
 }

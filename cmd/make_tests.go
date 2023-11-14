@@ -9,7 +9,7 @@ import (
 
 var testMakeCmd = &cobra.Command{
 	Use:     "maketest",
-	Short:   "Run the tests for the full program",
+	Short:   "Make the tests for the full program (requires modifying run_tests.go to add more tests)",
 	Aliases: []string{"m"},
 	Run:     run_make_tests,
 }
